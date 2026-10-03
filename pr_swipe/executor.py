@@ -56,6 +56,9 @@ class Executor:
             except GitHubError as e:
                 self.audit.append("error", repo=d["repo"], number=d["number"], status=e.status)
                 return {"ok": False, "error": f"GitHub {e.status}"}
+            except OSError as e:  # URLError, timeouts: answer the GUI instead of dropping the connection
+                self.audit.append("error", repo=d["repo"], number=d["number"], status="network")
+                return {"ok": False, "error": f"network error talking to GitHub: {e}"}
         finally:
             self.lock.release()
 

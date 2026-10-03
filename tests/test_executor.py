@@ -85,3 +85,11 @@ def test_decision_on_an_unverified_head_is_refused(tmp_path):
     r2 = ex.handle(d("close", 2, "b" * 40))
     assert not r1["ok"] and not r2["ok"] and "verified" in r1["error"]
     assert ex.train.queued() == set() and gh.calls == []
+
+
+def test_network_failure_is_answered_not_dropped(tmp_path):
+    import urllib.error
+    def offline(repo): raise urllib.error.URLError("no route")
+    gh, ex = setup(tmp_path, installed=offline)
+    r = ex.handle(d("approve", 1, "a" * 40))
+    assert r["ok"] is False and "network" in r["error"] and ex.train.queued() == set()
