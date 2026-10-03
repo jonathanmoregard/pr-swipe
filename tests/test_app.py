@@ -187,7 +187,7 @@ def test_review_view_orders_files_and_collapses_low_signal(qtbot):
                         "⚠ high src/train.py  +1 -1"]
     assert rows[-1].startswith("▸ 1 low-signal") and not any("vendor/lib.go" in r for r in rows)
     assert "🚩 rule: ci-workflow" in w.body.toPlainText()
-    assert w.intent_text.text() == "Retry merges on 409.\nDetails." and "verified" in w.intent_source.text()
+    assert w.intent_text.text() == "Retry merges on 409." and "verified" in w.intent_source.text()
     assert w.gate_label.text() == "🔒 Approve locked" and w.keys["approve"][1].text() == "approve 🔒"
 
 

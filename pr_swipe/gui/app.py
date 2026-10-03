@@ -9,10 +9,11 @@ import sys
 import time
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextFormat
-from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QListWidget,
-                               QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar, QStackedWidget,
-                               QSizePolicy, QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtGui import (QColor, QFont, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
+                           QTextDocument, QTextFormat, QTextFrameFormat, QTextLength, QTextTable)
+from PySide6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
+                               QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar,
+                               QStackedWidget, QSizePolicy, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
 from .. import card as C
 from ..config import load
@@ -21,6 +22,7 @@ from . import evidence as EV
 from . import quest as Q
 from . import review as RV
 from . import style as S
+from . import summary as SU
 from .store import ExecutorClient, Store
 
 DWELL_S = 2.0
@@ -133,6 +135,41 @@ class DiffView(QPlainTextEdit):
             self.verticalScrollBar().setValue(0)
 
 
+class DescView(QTextBrowser):
+    """PR description as GitHub markdown with raw HTML off, links inert and no resource loading, so an
+    untrusted body can neither run markup nor make the GUI fetch anything."""
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("descView")
+        self.setOpenLinks(False); self.setOpenExternalLinks(False)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setFrameShape(QFrame.NoFrame)
+
+    def loadResource(self, kind, url):  # noqa: N802 (Qt override): never load images or other resources
+        return None
+
+    def show_markdown(self, text):
+        doc = self.document()
+        doc.setMarkdown(text, QTextDocument.MarkdownFeatures(
+            QTextDocument.MarkdownDialectGitHub.value | QTextDocument.MarkdownNoHTML.value))
+        cur = QTextCursor(doc)
+        cur.select(QTextCursor.Document)
+        fmt = QTextBlockFormat(); fmt.setLineHeight(150, QTextBlockFormat.ProportionalHeight.value)
+        cur.mergeBlockFormat(fmt)
+        for f in doc.rootFrame().childFrames():
+            if isinstance(f, QTextTable):
+                tf = f.format()
+                tf.setBorder(1); tf.setBorderBrush(QColor(S.C["border"])); tf.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
+                tf.setCellPadding(4); tf.setCellSpacing(0); tf.setBorderCollapse(True)
+                tf.setWidth(QTextLength(QTextLength.PercentageLength, 100))
+                f.setFormat(tf)
+                for col in range(f.columns()):
+                    cell = f.cellAt(0, col); cf = cell.format(); cf.setBackground(QColor(S.C["bg"]))
+                    cell.setFormat(cf)
+        self.moveCursor(QTextCursor.Start)
+
+
 # --- small widget helpers ----------------------------------------------------------------------------------
 def label(text="", role=None, name=None, tone=None, rich=False, wrap=False, bold=False):
     w = QLabel(text)
@@ -179,6 +216,7 @@ def clear(layout):
     while layout.count():
         it = layout.takeAt(0)
         if it.widget():
+            it.widget().hide()  # deleteLater alone leaves it painted until the event loop runs
             it.widget().deleteLater()
 
 
@@ -200,6 +238,7 @@ class Window(QMainWindow):
         self.quest_started, self.quest_total, self.session_start, self.noted = False, 0, clock(), set()
         self.quest_complete, self.celebration = False, Q.celebration()
         self.reviews, self.review, self.flavours, self.list_rows = {}, None, {}, []
+        self.rendered_key, self.warn_all, self.desc_toggled, self.desc_open = None, False, None, False
         self.setWindowTitle("pr-swipe")
         self.setStyleSheet(S.stylesheet())
         self.setFont(S.ui_font())
@@ -214,7 +253,7 @@ class Window(QMainWindow):
         lay.addWidget(self.screens, 1); lay.addWidget(self._build_status())
         self.setCentralWidget(root)
         self.setMinimumSize(960, 700)
-        self.resize(1100, 800)
+        self.resize(1440, 900)
         self.reload()
         self.timer = QTimer(self); self.timer.timeout.connect(self.reload); self.timer.start(30000)
         self.cov_timer = QTimer(self); self.cov_timer.timeout.connect(self._coverage); self.cov_timer.start(500)
@@ -227,45 +266,55 @@ class Window(QMainWindow):
         self.dots = QWidget(); self.dots_lay = QHBoxLayout(self.dots)
         self.dots_lay.setContentsMargins(0, 0, 0, 0); self.dots_lay.setSpacing(3)
         self.flavour = label(role="flavour")
-        lay.addWidget(row(self.pill, self.progress_label, self.dots, self.flavour, "stretch", spacing=12))
+        self.verified_chip = label(name="verifiedChip")
+        lay.addWidget(row(self.pill, self.progress_label, self.dots, self.flavour, "stretch", self.verified_chip,
+                          spacing=12))
 
         self.repo_label = label(role="repo")
-        self.verified_chip = label(name="verifiedChip")
         self.title_label = label(role="title", wrap=True)
-        self.meta_label = label(role="meta", rich=True)
+        self.meta_label = label(role="meta", rich=True, wrap=True)
         pr = QWidget(); pl = QVBoxLayout(pr); pl.setContentsMargins(0, 0, 0, 0); pl.setSpacing(4)
-        pl.addWidget(row(self.repo_label, "stretch", self.verified_chip))
-        pl.addWidget(self.title_label); pl.addWidget(self.meta_label)
+        pl.addWidget(self.repo_label); pl.addWidget(self.title_label); pl.addWidget(self.meta_label)
         lay.addWidget(pr)
 
-        self.warnings, wl = frame("warnings", QVBoxLayout, (12, 8, 12, 8), 4)
-        self.warn_grid = QGridLayout(); self.warn_grid.setHorizontalSpacing(12); self.warn_grid.setVerticalSpacing(4)
-        self.warn_grid.setColumnMinimumWidth(0, 170); self.warn_grid.setColumnStretch(1, 1)
-        wl.addLayout(self.warn_grid)
-        lay.addWidget(self.warnings)
-
-        self.intent_panel, il = frame("intentPanel")
-        self.intent_source = label(role="caption", tone="sprout")
-        il.addWidget(row(label("INTENT", role="label"), self.intent_source, "stretch"))
-        self.intent_text = label(role="body", wrap=True)
-        il.addWidget(self.intent_text); il.addStretch(1)
-        self.ai_panel, al = frame("aiPanel")
-        al.addWidget(row(label("AI PRE-REVIEW", role="label"), label("UNVERIFIED", name="unverifiedTag"), "stretch"))
+        # intent first: verified headline, then the solution path, AI verdict alongside
+        self.intent_panel, ig = frame("intentPanel", QGridLayout, (16, 14, 16, 14), 16)
+        left = QWidget(); ll = QVBoxLayout(left); ll.setContentsMargins(0, 0, 0, 0); ll.setSpacing(12)
+        self.intent_source = label(name="sourceNote", tone="sprout")
+        self.intent_text = label(name="intentHeadline", wrap=True)
+        head = QWidget(); hl = QVBoxLayout(head); hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(4)
+        hl.addWidget(row(label("INTENT", role="label"), self.intent_source, "stretch")); hl.addWidget(self.intent_text)
+        ll.addWidget(head)
+        self.path_source = label(name="sourceNote")
+        self.path_box = QWidget(); self.path_lay = QHBoxLayout(self.path_box)
+        self.path_lay.setContentsMargins(0, 0, 0, 0); self.path_lay.setSpacing(6)
+        how = QWidget(); hw = QVBoxLayout(how); hw.setContentsMargins(0, 0, 0, 0); hw.setSpacing(6)
+        hw.addWidget(row(label("HOW · SOLUTION PATH", role="label"), self.path_source, "stretch"))
+        hw.addWidget(self.path_box)
+        ll.addWidget(how)
+        ig.addWidget(left, 0, 0); ig.setColumnStretch(0, 1)
+        self.ai_panel, al = frame("aiPanel", spacing=6)
+        self.ai_panel.setFixedWidth(400)
+        self.ai_tag = label("UNVERIFIED", name="unverifiedTag")
+        al.addWidget(row(label("AI PRE-REVIEW", role="label"), self.ai_tag, "stretch"))
         self.verdict_chip = label(name="verdictChip")
         self.verdict_chip.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.verdict_reason = label(role="meta", wrap=True)
-        verdict = row(self.verdict_chip, self.verdict_reason)
-        verdict.layout().setAlignment(self.verdict_chip, Qt.AlignTop)
-        al.addWidget(verdict)
+        self.verdict_row = row(self.verdict_chip, self.verdict_reason)
+        self.verdict_row.layout().setAlignment(self.verdict_chip, Qt.AlignTop)
+        al.addWidget(self.verdict_row)
         self.ai_summary = label(role="meta", wrap=True)
         al.addWidget(self.ai_summary); al.addStretch(1)
-        intent_row = QWidget(); irl = QHBoxLayout(intent_row); irl.setContentsMargins(0, 0, 0, 0); irl.setSpacing(12)
-        irl.addWidget(self.intent_panel, 6); irl.addWidget(self.ai_panel, 5)
-        lay.addWidget(intent_row)
+        ig.addWidget(self.ai_panel, 0, 1, Qt.AlignTop)
+        lay.addWidget(self.intent_panel)
 
-        self.left_col = QWidget(); self.left_col.setFixedWidth(300)
-        lcl = QVBoxLayout(self.left_col); lcl.setContentsMargins(0, 0, 0, 0); lcl.setSpacing(12)
+        self.warnings, self.warn_grid = frame("warningsStrip", QGridLayout, (12, 7, 12, 7), 2)
+        self.warn_grid.setHorizontalSpacing(10)
+        self.warn_grid.setColumnMinimumWidth(0, 150); self.warn_grid.setColumnStretch(2, 1)
+        lay.addWidget(self.warnings)
+
         files_panel, fl = frame("filesPanel", margins=(0, 6, 0, 6), spacing=0)
+        files_panel.setFixedWidth(300)
         fl.addWidget(row(label("FILES · BY RISK", role="label"), "stretch", label("j/k", role="caption"),
                          margins=(12, 2, 12, 6)))
         self.files = QListWidget(); self.files.setObjectName("fileList")
@@ -273,12 +322,7 @@ class Window(QMainWindow):
         self.files.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.files.currentRowChanged.connect(self._clicked_row)
         fl.addWidget(self.files)
-        lcl.addWidget(files_panel, 1)
-        commits_panel, cl = frame("commitsPanel", margins=(12, 8, 12, 8), spacing=4)
-        self.commits_title = label(role="label")
-        self.commits_label = label(rich=True, wrap=True)
-        cl.addWidget(self.commits_title); cl.addWidget(self.commits_label)
-        lcl.addWidget(commits_panel)
+        self.left_col = files_panel
 
         diff_panel, dl = frame("diffPanel", margins=(0, 0, 0, 0), spacing=0)
         dh, dhl = frame("diffHeader", QHBoxLayout, (12, 7, 12, 7), 10)
@@ -289,8 +333,28 @@ class Window(QMainWindow):
         dl.addWidget(dh)
         self.body = DiffView()
         dl.addWidget(self.body, 1)
+
+        self.right_col = QWidget(); self.right_col.setFixedWidth(420)
+        self.right_lay = QVBoxLayout(self.right_col); self.right_lay.setContentsMargins(0, 0, 0, 0)
+        self.right_lay.setSpacing(12)
+        self.desc_panel, dsl = frame("descPanel", spacing=8)
+        self.desc_title = label(role="label")
+        self.desc_source = label(name="sourceNote", tone="sprout")
+        dsl.addWidget(row(self.desc_title, "stretch", self.desc_source))
+        self.desc_view = DescView()
+        dsl.addWidget(self.desc_view, 1)
+        self.desc_footer = label(name="descFooter", wrap=True)
+        dsl.addWidget(self.desc_footer)
+        self.commits_panel, cl = frame("commitsPanel", spacing=8)
+        self.commits_title = label(role="label")
+        self.commits_source = label("git · verified ✓", name="sourceNote", tone="sprout")
+        cl.addWidget(row(self.commits_title, "stretch", self.commits_source))
+        self.commits_grid = QGridLayout(); self.commits_grid.setHorizontalSpacing(8); self.commits_grid.setVerticalSpacing(8)
+        self.commits_grid.setColumnStretch(1, 1)
+        cl.addLayout(self.commits_grid)
+
         review = QWidget(); rl = QHBoxLayout(review); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(12)
-        rl.addWidget(self.left_col); rl.addWidget(diff_panel, 1)
+        rl.addWidget(self.left_col); rl.addWidget(diff_panel, 1); rl.addWidget(self.right_col)
         lay.addWidget(review, 1)
 
         self.coverage_panel, cvl = frame("coveragePanel", QHBoxLayout, (12, 8, 12, 8), 16)
@@ -318,6 +382,10 @@ class Window(QMainWindow):
         self.secondary_keys.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         lay.addWidget(row(*main_keys, divider, self.secondary_keys, spacing=18))
         return screen
+
+    def resizeEvent(self, ev):  # noqa: N802 (Qt override)
+        self.right_col.setFixedWidth(max(320, min(480, int(self.width() * 0.22))))
+        super().resizeEvent(ev)
 
     def _centered_column(self):
         screen = QWidget(); outer = QVBoxLayout(screen); outer.setContentsMargins(20, 16, 20, 16)
@@ -469,6 +537,8 @@ class Window(QMainWindow):
     def render(self):
         c = self.current()
         self.armed, self.shown_at, self.detail_seen, self.one_off = None, self.clock(), False, False
+        if c is not None and D.card_key(c) != self.rendered_key:
+            self.rendered_key, self.warn_all, self.desc_toggled = D.card_key(c), False, None
         if c is not None and not self.quest_started:
             return self._start_screen()
         if c is None:
@@ -483,6 +553,7 @@ class Window(QMainWindow):
         self._pr_block(c)
         self._warnings(c)
         self._intent(c)
+        self._right_column(c)
         self._review_on(c)
         self._render_body()
         self._footer()
@@ -501,7 +572,10 @@ class Window(QMainWindow):
             ci_txt = span("CI ✓", S.TONES["sprout"][0])
         else:
             ci_txt = f"CI {esc(ci['state'])}"
-        parts = [f"by {esc(c['author'])} ({esc(c['author_class'])})", f"started {esc(c['first_commit_at'][:10])}",
+        who = (f"by {esc(c['author'])} " + f'<span style="color:{S.TONES["traveler"][0]};'
+               f'background:{S.TONES["traveler"][1]};">&nbsp;external&nbsp;</span>'
+               if c["author_class"] == "external" else f"by {esc(c['author'])} ({esc(c['author_class'])})")
+        parts = [who, f"started {esc(c['first_commit_at'][:10])}",
                  f"idle {esc(sig['days_since_update'])}d", ci_txt,
                  span(f"+{int(ds['additions'])}", S.C["add_fg"], mono=True) + " "
                  + span(f"−{int(ds['deletions'])}", S.C["del_fg"], mono=True) + f" · {int(ds['files'])} file{'' if ds['files'] == 1 else 's'}"]
@@ -512,41 +586,114 @@ class Window(QMainWindow):
         self.meta_label.setText(sep.join(parts))
 
     def _warnings(self, c):
-        rows = []
-        if c.get("_unverified"):
-            rows.append(("🧭 Unverified", "external repo, shown as the collector saw it; any swipe opens the browser"))
-        if c.get("_returned"):
-            rows.append(("↩ Returned by executor", c["_returned"]))
-        rows += [("⚠ Hidden content", f"{h['kind']} in {h['where']}: {h['text'][:200]}") for h in c["hidden_content"]]
+        rows = SU.warning_rows(c)
         clear(self.warn_grid)
-        for i, (title, text) in enumerate(rows):
-            self.warn_grid.addWidget(label(title, tone="dragon", bold=True), i, 0, Qt.AlignTop)
-            self.warn_grid.addWidget(label(text, role="meta", wrap=True), i, 1)
+        visible = rows if self.warn_all else rows[:3]
+        for i, r in enumerate(visible):
+            if i == 0:
+                self.warn_grid.addWidget(label(f"WARNINGS · {SU.warning_total(c)}", role="label", tone="dragon"),
+                                         0, 0, Qt.AlignTop)
+            count = label(r["count"], name="warnCount"); count.setAlignment(Qt.AlignRight | Qt.AlignTop)
+            count.setFixedWidth(40); set_props(count, risky="true" if r["risky"] else "false")
+            text = label(r["text"], name="warnText", wrap=True); set_props(text, risky="true" if r["risky"] else "false")
+            more = len(rows) - len(visible)
+            where = label(f"+{more} more · w show all" if more and i == len(visible) - 1 else "", name="warnWhere")
+            self.warn_grid.addWidget(count, i, 1); self.warn_grid.addWidget(text, i, 2)
+            self.warn_grid.addWidget(where, i, 3, Qt.AlignTop)
         self.warnings.setVisible(bool(rows))
 
     def _intent(self, c):
         rec = c.get("_record")
-        if rec:
-            lines = [l.strip() for l in (rec.get("body") or "").splitlines() if l.strip()][:3]
-            self.intent_source.setText("PR body · verified ✓"); set_props(self.intent_source, tone="sprout")
-            self.intent_text.setText("\n".join(lines)[:400] or "(no description)")
+        body = rec.get("body") if rec else None
+        headline, from_body = SU.intent_headline(body, c["title"])
+        self.intent_text.setText(headline)
+        if not rec:
+            self.intent_source.setText("PR title · not verified"); set_props(self.intent_source, tone="muted")
         else:
-            self.intent_source.setText("not verified"); set_props(self.intent_source, tone="muted")
-            self.intent_text.setText("No verified PR body for this card.")
+            self.intent_source.setText(("first sentence of PR body" if from_body else "PR title") + " · verified ✓")
+            set_props(self.intent_source, tone="sprout")
+        self.path_source.setText(SU.path_source_note(c))
+        clear(self.path_lay)
+        for i, st in enumerate(SU.solution_path(c, c.get("_commits", []))):
+            if i:
+                arrow = label("→", name="stepArrow"); self.path_lay.addWidget(arrow)
+            step, sl = frame("pathStep", margins=(10, 7, 10, 7), spacing=3)
+            step.setProperty("source", st["source"])
+            num, text = label(str(i + 1), name="stepNum"), label(st["text"], name="stepText", wrap=True)
+            num.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+            top = row(num, text, spacing=6); top.layout().setStretch(1, 1)
+            top.layout().setAlignment(num, Qt.AlignTop)
+            src = label(st["src"], name="stepSrc"); src.setProperty("source", st["source"])
+            sl.addWidget(top); sl.addWidget(src); sl.addStretch(1)
+            self.path_lay.addWidget(step, 1)
         v, ctx = c["verdict"], c["context"]
+        has_ai = any((ctx.get(k) or "").strip() for k in ("purpose", "solution")) or c.get("deep_review")
+        set_props(self.ai_panel, state="present" if has_ai else "none")
+        self.ai_tag.setText("UNVERIFIED" if has_ai else "NONE"); set_props(self.ai_tag, state="present" if has_ai else "none")
+        self.verdict_row.setVisible(bool(has_ai))
+        if not has_ai:
+            self.ai_summary.setText(f"{v['reason']}. The path above uses verified files and CI only.\n"
+                                    "↑ requests a deep review.")
+            return
         self.verdict_chip.setText(v["recommendation"].upper())
         set_props(self.verdict_chip, verdict="close" if v["recommendation"] == "close" else "approve")
-        self.verdict_reason.setText(f"{v['confidence']} confidence — {v['reason']}"
+        self.verdict_reason.setText(f"{v['confidence']} confidence — {SU.short(v['reason'], 240)}"
                                     + (" · STALE" if v["stale"] else "")
                                     + (f" · superseded by {', '.join(v['superseded_by'])}"
                                        if v["superseded_by"] and "superseded" not in v["reason"] else ""))
-        lines = [f"Purpose  {ctx['purpose']}", f"Solution  {ctx['solution']}"]
+        lines = [f"Purpose: {SU.short(ctx['purpose'], 240)}"] if ctx["purpose"] else []
         if ctx["notes"]:
-            lines.append(f"Notes  {ctx['notes']}")
+            lines.append(SU.short(ctx["notes"], 240))
         if c.get("deep_review"):
-            lines.append("Deep review  " + c["deep_review"]["summary"])
+            lines.append("Deep review: " + c["deep_review"]["summary"])
             lines += [f"  • {f}" for f in c["deep_review"]["findings"]]
         self.ai_summary.setText("\n".join(lines))
+
+    def _right_column(self, c):
+        rec = c.get("_record")
+        own = c["author_class"] != "external" and any((c["context"].get(k) or "").strip() for k in ("purpose", "solution"))
+        body = (rec or {}).get("body") or ""
+        self.desc_open = self.desc_toggled if self.desc_toggled is not None else not own
+        self.desc_title.setText(("▾ " if self.desc_open else "▸ ") + "DESCRIPTION")
+        self.desc_source.setText("PR body · verified ✓" if rec else "not verified")
+        set_props(self.desc_source, tone="sprout" if rec else "muted")
+        self.desc_view.show_markdown(SU.clean_body(body) if body.strip() else
+                                     ("_(no description)_" if rec else "_No verified description for this card._"))
+        lines = len([l for l in body.splitlines() if l.strip()])
+        notes = []
+        if not self.desc_open and lines > 4:
+            notes.append(f"⋯ {lines - 4} more lines")
+        if SU.html_comment_count(body):
+            notes.append(f"{SU.html_comment_count(body)} HTML comments hidden")
+        notes.append("raw HTML and images not rendered · d " + ("collapses" if self.desc_open else "expands"))
+        self.desc_footer.setText(" · ".join(notes))
+        lh = self.desc_view.fontMetrics().lineSpacing()
+        self.desc_view.setMaximumHeight(16777215 if self.desc_open else int(lh * 1.5 * 4) + 12)
+        commits = c.get("_commits", [])
+        self.commits_title.setText(f"COMMITS · {len(commits)}")
+        clear(self.commits_grid)
+        for i, x in enumerate(commits[:8]):
+            sha = label(x["sha"][:7], name="commitSha"); sha.setFixedWidth(64)
+            self.commits_grid.addWidget(sha, i, 0, Qt.AlignTop)
+            self.commits_grid.addWidget(label(x["subject"], name="commitSubj", wrap=True), i, 1)
+        if len(commits) > 8:
+            self.commits_grid.addWidget(label(f"+{len(commits) - 8} more", role="caption"), 8, 1)
+        self.commits_panel.setVisible(bool(commits))
+        self.right_lay.removeWidget(self.desc_panel); self.right_lay.removeWidget(self.commits_panel)
+        order = [self.commits_panel, self.desc_panel] if own else [self.desc_panel, self.commits_panel]
+        for w in order:
+            self.right_lay.addWidget(w, 1 if w is self.desc_panel and self.desc_open else 0)
+        if not self.desc_open:
+            self.right_lay.addStretch(1)
+
+    def show_all_warnings(self, c):
+        dlg = QDialog(self); dlg.setWindowTitle("All warnings"); dlg.resize(760, 480)
+        lay = QVBoxLayout(dlg)
+        lst = QListWidget(); lst.setWordWrap(True)
+        for h in c["hidden_content"]:
+            lst.addItem(f"{SU.KIND_NAME.get(h['kind'], h['kind'])} · {h['where']} · {SU.clean_body(h['text'])[:500]}")
+        lay.addWidget(lst)
+        dlg.exec()
 
     # --- review view (verified cards only; others keep the hotspot pane) ---
     def _review_off(self):
@@ -560,11 +707,6 @@ class Window(QMainWindow):
         if key not in self.reviews:
             self.reviews[key] = ReviewState(c, self.clock)
         self.review = self.reviews[key]
-        commits = c.get("_commits", [])
-        self.commits_title.setText(f"COMMITS · {len(commits)}")
-        self.commits_label.setText("<br>".join(
-            f'<span style="font-family:\'{S.mono_family()}\';font-size:12px;">'
-            f'{span(esc(x["sha"][:7]), S.C["text3"])} {esc(x["subject"])}</span>' for x in commits[:12]))
         self.left_col.show(); self.coverage_panel.show()
         self._fill_files()
         rows = self.review.rows()
@@ -693,7 +835,7 @@ class Window(QMainWindow):
         for w in (cap, lab):
             set_props(w, disabled="true" if locked else "false")
         hints = ([("j/k", "file"), ("n", "next flag")] if self.review is not None else []) + [
-            ("t", "note"), ("m", "AI missed"), ("x", "one-off" + (" ✓" if self.one_off else "")),
+            ("d", "description"), ("w", "all warnings"), ("t", "note"), ("m", "AI missed"), ("x", "one-off" + (" ✓" if self.one_off else "")),
             ("s", "skip"), ("u", "undo"), ("o", "browser")]
         self.secondary_keys.setText("&nbsp;&nbsp; ".join(
             f'<b style="color:{S.C["text2"]}">{k}</b>&nbsp;{t.replace(" ", "&nbsp;")}' for k, t in hints))
@@ -785,6 +927,11 @@ class Window(QMainWindow):
         if k == Qt.Key_X:
             self.one_off = not self.one_off
             return self._footer()
+        if k == Qt.Key_D:
+            self.desc_toggled = not self.desc_open
+            return self._right_column(c)
+        if k == Qt.Key_W and c["hidden_content"]:
+            return self.show_all_warnings(c)
         if k in (Qt.Key_J, Qt.Key_K) and self.review is not None:
             return self._select_row(self.review.row + (1 if k == Qt.Key_J else -1))
         if k == Qt.Key_N and self.review is not None:

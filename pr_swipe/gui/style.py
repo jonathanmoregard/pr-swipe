@@ -69,9 +69,9 @@ def stylesheet():
 QWidget {{ background:#F5F4F0; color:#1E1D1A; font-size:13px; }}
 
 QFrame#intentPanel, QFrame#filesPanel, QFrame#commitsPanel, QFrame#diffPanel, QFrame#coveragePanel,
-QFrame#rewardsPanel, QFrame#careTile {{ background:#FFFFFF; border:1px solid #E3E0D8; border-radius:6px; }}
+QFrame#descPanel, QFrame#rewardsPanel, QFrame#careTile {{ background:#FFFFFF; border:1px solid #E3E0D8; border-radius:6px; }}
 QFrame#aiPanel {{ background:#FCFBF8; border:1px dashed #C9C5BB; border-radius:6px; }}
-QFrame#warnings {{ background:#FAECE9; border:1px solid #EDC9C3; border-radius:6px; }}
+QFrame#warningsStrip {{ background:#FDF6F4; border:1px solid #EDC9C3; border-radius:6px; }}
 QFrame#diffHeader {{ background:#FFFFFF; border:none; border-bottom:1px solid #E3E0D8;
   border-top-left-radius:6px; border-top-right-radius:6px; }}
 QFrame#statusStrip {{ background:#EDEBE6; border:none; border-top:1px solid #E3E0D8; }}
@@ -79,8 +79,15 @@ QFrame#vDivider {{ background:#E3E0D8; max-width:1px; min-width:1px; }}
 QFrame#hDivider {{ background:#E3E0D8; max-height:1px; min-height:1px; }}
 QFrame#intentPanel QWidget, QFrame#filesPanel QWidget, QFrame#commitsPanel QWidget, QFrame#diffPanel QWidget,
 QFrame#coveragePanel QWidget, QFrame#rewardsPanel QWidget, QFrame#careTile QWidget, QFrame#aiPanel QWidget,
-QFrame#warnings QWidget, QFrame#statusStrip QWidget, QFrame#encounterTile QWidget {{ background:transparent; }}
-QFrame#diffPanel QPlainTextEdit, QFrame#filesPanel QListWidget {{ background:#FFFFFF; }}
+QFrame#warningsStrip QWidget, QFrame#statusStrip QWidget, QFrame#encounterTile QWidget,
+QFrame#descPanel QWidget {{ background:transparent; }}
+QFrame#diffPanel QPlainTextEdit, QFrame#filesPanel QListWidget, QFrame#descPanel QTextBrowser {{ background:#FFFFFF; }}
+QFrame#intentPanel QFrame#aiPanel {{ background:#FCFBF8; border:1px dashed #C9C5BB; border-radius:6px; }}
+QFrame#intentPanel QFrame#aiPanel[state="none"] {{ background:#F5F4F0; border:1px solid #E3E0D8; }}
+QFrame#intentPanel QFrame#pathStep {{ background:#F5F4F0; border:none; border-radius:4px; }}
+QFrame#intentPanel QFrame#pathStep[source="ai"] {{ background:#FCFBF8; border:1px dashed #C9C5BB; }}
+QFrame#intentPanel QFrame#pathStep[source="risk"] {{ background:#FAECE9; }}
+QFrame#pathStep QWidget {{ background:transparent; }}
 
 QLabel[role="display"] {{ font-size:26px; font-weight:600; }}
 QLabel[role="title"] {{ font-size:20px; font-weight:600; }}
@@ -106,6 +113,27 @@ QLabel#verdictChip[verdict="approve"] {{ color:#2D7046; border:1px solid #9AC2A6
 QLabel#verdictChip[verdict="close"] {{ color:#A93A2F; border:1px solid #EDC9C3; }}
 QFrame#filesPanel QLabel#sevChip {{ font-family:"{mono}"; font-size:10px; color:#8A5A00; background:#FCF3DF; border-radius:3px;
   padding:0 4px; }}
+
+QLabel#intentHeadline {{ font-size:17px; font-weight:500; color:#1E1D1A; }}
+QLabel#sourceNote {{ font-size:11px; color:#8A867C; }}
+QLabel#sourceNote[tone="sprout"] {{ color:#2D7046; }}
+QLabel#stepNum {{ font-family:"{mono}"; font-size:13px; color:#8A867C; }}
+QLabel#stepText {{ font-size:13px; color:#1E1D1A; }}
+QLabel#stepSrc {{ font-size:11px; color:#8A867C; }}
+QLabel#stepSrc[source="ai"] {{ color:#8A5A00; }}
+QLabel#stepSrc[source="risk"] {{ color:#A93A2F; }}
+QLabel#stepArrow {{ font-size:13px; color:#B8B4AA; }}
+QLabel#unverifiedTag[state="none"] {{ color:#8A867C; border:1px solid #D2CEC4; }}
+QLabel#warnCount {{ font-family:"{mono}"; font-size:11px; color:#8A867C; }}
+QLabel#warnCount[risky="true"] {{ color:#A93A2F; }}
+QLabel#warnText {{ font-size:12px; }}
+QLabel#warnText[risky="true"] {{ color:#1E1D1A; }}
+QLabel#warnText[risky="false"] {{ color:#5B5850; }}
+QLabel#warnWhere {{ font-size:11px; color:#8A867C; }}
+QTextBrowser#descView {{ border:none; font-size:13px; color:#1E1D1A; selection-background-color:#E8F0F6; }}
+QLabel#descFooter {{ font-size:12px; color:#8A867C; border-top:1px solid #ECEAE3; padding-top:6px; }}
+QLabel#commitSha {{ font-family:"{mono}"; font-size:12px; color:#8A867C; }}
+QLabel#commitSubj {{ font-size:12px; color:#1E1D1A; }}
 
 QLabel#dot {{ min-width:6px; max-width:6px; min-height:6px; max-height:6px; border-radius:1px; background:#D2CEC4; }}
 QLabel#dot[state="done"] {{ background:#8A867C; }}
