@@ -221,6 +221,15 @@ def warning_total(card):
     return len(card.get("hidden_content", [])) + bool(card.get("_unverified")) + bool(card.get("_returned"))
 
 
+_MERGED_LEAD = re.compile(r"^(?:with this (?:merged|in place)|once (?:this )?(?:is )?merged?s?|after (?:this )?merg(?:es|ing)),\s*", re.I)
+
+
+def value_first(purpose):
+    """Drop a "Once merged," lead-in: every PR's value is conditional on merging, so it says nothing."""
+    text = _MERGED_LEAD.sub("", purpose.strip())
+    return text[:1].upper() + text[1:]
+
+
 def intent(card):
     """(headline, source, tone, pr_line). The value, if the AI stated one, else the PR's own words.
     pr_line is the verified sentence shown under an AI headline so the evidence stays in view."""
@@ -229,5 +238,5 @@ def intent(card):
     verified = ("first sentence of PR body" if from_body else "PR title") + (" · verified ✓" if rec else " · not verified")
     purpose = (card.get("context", {}).get("purpose") or "").strip()
     if purpose:
-        return short(purpose, HEADLINE_MAX), "what it enables · AI · unverified", "ai", f"PR says: {said}"
+        return short(value_first(purpose), HEADLINE_MAX), "what it enables · AI · unverified", "ai", f"PR says: {said}"
     return said, verified, "sprout" if rec else "muted", ""

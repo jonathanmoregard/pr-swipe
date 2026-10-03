@@ -106,3 +106,10 @@ def test_description_preview_stops_before_a_table_or_fence():
     assert SU.desc_preview("Why now.\n| a | b |") == "Why now."
     assert SU.desc_preview("```\ncode\n```") == "_(starts with a table or code block · d expands)_"
     assert SU.desc_preview("1\n2\n3\n4\n5\n6") == "1\n2\n3\n4"
+
+
+def test_value_first_drops_merge_lead_in():
+    assert SU.value_first("Once this merges, you can swipe PRs.") == "You can swipe PRs."
+    assert SU.value_first("With this merged, commands can't touch the cache.") == "Commands can't touch the cache."
+    assert SU.value_first("Once merged, x") == "X"
+    assert SU.value_first("Lets agents run designs.") == "Lets agents run designs."
