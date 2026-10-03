@@ -130,17 +130,17 @@ def test_one_off_flag_rides_on_decision_and_resets(qtbot):
 
 def test_quest_start_screen_gates_the_first_key(qtbot):
     w, store, client, _ = make(qtbot, [make_card(), make_card(number=2, hotspots=[hot()])], start=False)
-    assert "quest" in w.title_label.text().lower() and "2 encounters" in w.context_label.text()
+    assert "QUEST" in w.start_kicker.text() and w.start_display.text() == "2 encounters across 1 repo"
     qtbot.keyClick(w, Qt.Key_Right)          # begins the quest, decides nothing
     w.flush_pending()
     assert client.sent == [] and w.quest_started
-    assert "encounter 1/2" in w.encounter_label.text()
+    assert w.progress_label.text() == "Encounter 1 of 2"
 
 
 def test_encounter_header_and_sharp_eye_toast(qtbot):
     card = make_card(ci={"state": "failure", "failing": ["t"]})
     w, store, _, _ = make(qtbot, [card])
-    assert "Dragon" in w.encounter_label.text()
+    assert "Dragon" in w.pill.text()
     w.ask_text = lambda *a: "off-by-one in train.py"
     qtbot.keyClick(w, Qt.Key_M)
     assert "Sharp eye" in w.footer.text()
@@ -155,8 +155,8 @@ def test_quest_complete_shows_recap_of_care(qtbot):
     w.flush_pending()
     store.cards = []
     w.reload()
-    text = w.title_label.text() + w.context_label.text()
-    assert "1 sharp-eye find" in text and "1 approved" in text
+    assert w.care_stats["finds"].text() == "1" and "1 approved" in w.tally.text()
+    assert "QUEST COMPLETE" in w.complete_kicker.text()
 
 
 class FakeView:
@@ -182,11 +182,13 @@ def review_card():
 
 def test_review_view_orders_files_and_collapses_low_signal(qtbot):
     w, *_ = make(qtbot, [review_card()])
-    rows = [w.files.item(i).text() for i in range(w.files.count())]
-    assert rows[0].startswith("🚩 .github/workflows/ci.yml") and rows[1].startswith("⚠ high src/train.py")
+    rows = w.file_rows()
+    assert rows[:4] == ["🚩 rule-flagged", "🚩 .github/workflows/ci.yml  +1 -1", "⚠ AI-flagged",
+                        "⚠ high src/train.py  +1 -1"]
     assert rows[-1].startswith("▸ 1 low-signal") and not any("vendor/lib.go" in r for r in rows)
-    assert "▶ 🚩 rule: ci-workflow" in w.body.toPlainText()
-    assert "Intent (PR body, verified): Retry merges on 409." in w.context_label.text()
+    assert "🚩 rule: ci-workflow" in w.body.toPlainText()
+    assert w.intent_text.text() == "Retry merges on 409.\nDetails." and "verified" in w.intent_source.text()
+    assert w.gate_label.text() == "🔒 Approve locked" and w.keys["approve"][1].text() == "approve 🔒"
 
 
 def test_j_moves_through_files_and_expands_low_signal(qtbot):
@@ -196,7 +198,7 @@ def test_j_moves_through_files_and_expands_low_signal(qtbot):
     for _ in range(3):
         qtbot.keyClick(w, Qt.Key_J)
     assert "+v2" in w.body.toPlainText()
-    assert any("vendor/lib.go" in w.files.item(i).text() for i in range(w.files.count()))
+    assert any("vendor/lib.go" in r for r in w.file_rows())
 
 
 def test_dragon_approve_waits_for_every_flagged_hunk(qtbot):
@@ -204,11 +206,11 @@ def test_dragon_approve_waits_for_every_flagged_hunk(qtbot):
     t["now"] += 60                            # time alone does not open the gate
     qtbot.keyClick(w, Qt.Key_Right); qtbot.keyClick(w, Qt.Key_Right)
     w.flush_pending()
-    assert client.sent == [] and "src/train.py" in w.footer.text()
+    assert client.sent == [] and "1 flagged hunk unvisited in train.py" in w.footer.text()
     qtbot.keyClick(w, Qt.Key_N)
     qtbot.keyClick(w, Qt.Key_N)
-    assert "▶ ⚠ AI high: retries without re-checking head" in w.body.toPlainText()
-    assert "flagged hunks 2/2" in w.coverage_label.text()
+    assert "⚠ AI high · unverified — retries without re-checking head" in w.body.toPlainText()
+    assert w.hunks_count.text() == "2/2" and w.gate_label.text() == "✓ Approve unlocked"
     qtbot.keyClick(w, Qt.Key_Right)
     w.flush_pending()
     assert client.sent and client.sent[0]["action"] == "approve"

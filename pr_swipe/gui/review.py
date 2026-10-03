@@ -78,22 +78,47 @@ class Coverage:
         return f"seen {len(self.seen)}/{len(self.paths)} files · flagged hunks {len(self.visited)}/{len(self.flagged)}"
 
 
-def annotate(diff_text, hotspots) -> str:
-    """Insert callout lines above each flagged hunk header of one file's diff."""
-    by_hunk = {}
-    for h in hotspots:
-        by_hunk.setdefault(h.get("hunk", ""), []).append(h)
-    out, first_hunk_done = [], False
+_HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+_FILE = re.compile(r"^diff --git a/.* b/(.*)$")
+_SKIP = ("index ", "--- ", "+++ ", "similarity ", "rename ", "old mode", "new mode", "new file mode",
+         "deleted file mode")
+
+
+def callout(h) -> tuple:
+    if h["source"] == "rule":
+        return "rule", f"🚩 rule: {h['rule']}"
+    return "ai", f"⚠ AI {h.get('severity', 'low')} · unverified — {h.get('why', '')}"
+
+
+def render_diff(diff_text, hotspots, path=None) -> list:
+    """Diff → [(kind, text)] for display: line numbers, and callouts under each flagged hunk header.
+
+    kind is one of file, meta, hunk, rule, ai, add, del, ctx. File-level flags (no hunk) go under
+    the file's first hunk. `path` names the file when the text has no `diff --git` header.
+    """
+    out, cur, first, old, new = [], path, True, 0, 0
     for line in diff_text.splitlines():
-        if line.startswith("@@"):
-            notes = by_hunk.get(line, [])
-            if not first_hunk_done:
-                notes = notes + [h for h in by_hunk.get("", [])]  # file-level flags go on the first hunk
-                first_hunk_done = True
-            for h in sorted(notes, key=lambda h: h["source"] != "rule"):
-                if h["source"] == "rule":
-                    out.append(f"▶ 🚩 rule: {h['rule']}")
-                else:
-                    out.append(f"▶ ⚠ AI {h.get('severity', 'low')}: {h.get('why', '')}")
-        out.append(line)
-    return "\n".join(out)
+        m = _FILE.match(line)
+        if m:
+            if path is None:  # whole-diff mode: a header row per file
+                cur, first = m.group(1), True
+                out.append(("file", cur))
+            continue
+        if line.startswith(_SKIP):
+            continue
+        h = _HUNK.match(line)
+        if h:
+            old, new = int(h.group(1)), int(h.group(2))
+            out.append(("hunk", line))
+            mine = [x for x in hotspots if x["file"] == cur and (x.get("hunk") == line or (first and not x.get("hunk")))]
+            out += [callout(x) for x in sorted(mine, key=lambda x: x["source"] != "rule")]
+            first = False
+        elif line.startswith("+"):
+            out.append(("add", f"{new:>4} {line}")); new += 1
+        elif line.startswith("-"):
+            out.append(("del", f"{old:>4} {line}")); old += 1
+        elif line.startswith(" "):
+            out.append(("ctx", f"{new:>4} {line}")); old += 1; new += 1
+        else:
+            out.append(("meta", line))
+    return out

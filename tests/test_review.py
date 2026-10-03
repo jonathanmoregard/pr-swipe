@@ -45,9 +45,14 @@ def test_coverage_gate_needs_every_flagged_hunk():
     assert cov.remaining() == []
 
 
-def test_annotate_puts_callouts_above_flagged_hunks():
-    diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x\n+y\n"
-    out = RV.annotate(diff, [rule("a.py"), ai("a.py")])
-    lines = out.splitlines()
-    i = lines.index("@@ -1 +1 @@")
-    assert lines[i - 2].startswith("▶ 🚩 rule: ci-workflow") and lines[i - 1].startswith("▶ ⚠ AI high: because")
+def test_render_diff_numbers_lines_and_puts_callouts_under_flagged_hunks():
+    diff = ("diff --git a/a.py b/a.py\nindex 1..2 100644\n--- a/a.py\n+++ b/a.py\n"
+            "@@ -1 +1 @@\n-x\n+y\n@@ -10,2 +10,2 @@\n ctx\n+z\n")
+    out = RV.render_diff(diff, [ai("a.py", hunk="@@ -10,2 +10,2 @@"), rule("a.py") | {"hunk": ""}, ai("b.py")])
+    assert out[0] == ("file", "a.py") and ("meta", "index 1..2 100644") not in out
+    i = out.index(("hunk", "@@ -1 +1 @@"))
+    assert out[i + 1] == ("rule", "🚩 rule: ci-workflow")              # file-level flag on the first hunk
+    j = out.index(("hunk", "@@ -10,2 +10,2 @@"))
+    assert out[j + 1] == ("ai", "⚠ AI high · unverified — because")
+    assert out[j + 2] == ("ctx", "  10  ctx") and out[j + 3] == ("add", "  11 +z")
+    assert not any("b.py" in t for _, t in out)                          # other files' flags stay out
