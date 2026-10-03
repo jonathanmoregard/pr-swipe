@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pr-swipe"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["PySide6", "jsonschema", "PyJWT", "cryptography"]
+
+[project.scripts]
+pr-swipe-collector = "pr_swipe.collector:main"
+pr-swipe-executor = "pr_swipe.executor:main"
+pr-swipe-gui = "pr_swipe.gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["pr_swipe*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
