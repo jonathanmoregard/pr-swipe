@@ -18,7 +18,7 @@ def world(tmp_path, files=None):
     git(m, "update-ref", f"refs/prs/{o['number']}", o["head"])
     cfg.verified.mkdir(parents=True)
     rec = {"repo": R, "number": o["number"], "head_sha": o["head"], "base_ref": "main", "base_sha": o["base"],
-           "merge_base": o["base"], "title": "Real title", "body": "real​body",
+           "merge_base": o["base"], "title": "Real title", "body": "real\u200bbody",
            "comments": [{"author": "bob", "body": "lgtm"}], "ci": {"state": "failure", "failing": ["t"]}}
     (cfg.verified / f"{R.replace('/', '__')}__{o['number']}.json").write_text(json.dumps(rec))
     return o, cfg

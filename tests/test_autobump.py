@@ -86,7 +86,7 @@ def test_non_dependabot_author_or_foreign_commit_stays_with_the_human(tmp_path):
 def test_non_dependency_file_or_install_script_stays_with_the_human(tmp_path):
     src = LOCK_BUMP + ("diff --git a/src/a.js b/src/a.js\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1,1 +1,1 @@\n-a\n+b\n")
     hook = LOCK_BUMP.replace('+    "left-pad": "^1.1.0"\n', '+    "left-pad": "^1.1.0",\n+    "postinstall": "node x.js"\n')
-    zw = LOCK_BUMP.replace('"^1.1.0"', '"^1.1.0​"')
+    zw = LOCK_BUMP.replace('"^1.1.0"', '"^1.1.0\u200b"')
     rename = LOCK_BUMP.replace("diff --git a/package.json b/package.json", "diff --git a/evil.sh b/package.json")
     for i, diff in enumerate([src, hook, zw, rename]):
         d = tmp_path / str(i); d.mkdir()

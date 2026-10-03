@@ -314,7 +314,7 @@ def test_encrypted_secrets_review_as_one_who_can_decrypt_row(qtbot):
 
 def test_warnings_are_one_meta_token_and_manual_steps_stay_off_the_card(qtbot):
     from PySide6.QtWidgets import QLabel
-    hidden = [{"kind": "zero-width", "where": "diff:a.py", "text": "x​y"}]
+    hidden = [{"kind": "zero-width", "where": "diff:a.py", "text": "x\u200by"}]
     card = make_card(hidden_content=hidden)
     card["context"]["manual"] = ["Create the OAuth client secret"]
     w, *_ = make(qtbot, [card])

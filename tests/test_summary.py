@@ -42,8 +42,8 @@ def test_headline_strips_links_and_caps_length_and_falls_back_to_title():
 
 
 def test_clean_body_hides_comments_and_reveals_invisible_characters():
-    out = SU.clean_body("a <!-- hidden --> @​bob")
-    assert "hidden" not in out and "​" not in out and "U+200B" in out
+    out = SU.clean_body("a <!-- hidden --> @\u200bbob")
+    assert "hidden" not in out and "\u200b" not in out and "U+200B" in out
 
 
 def test_path_without_ai_uses_file_roles_verified_counts_and_ci():

@@ -118,8 +118,8 @@ def rule_hotspots(files) -> list:
 
 
 _HTML_COMMENT = re.compile(r"<!--(.*?)-->", re.S)
-_ZW = re.compile("[​‌‍‎‏⁠﻿]")
-_BIDI = re.compile("[‪-‮⁦-⁩]")
+_ZW = re.compile("[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
+_BIDI = re.compile("[\u202a-\u202e\u2066-\u2069]")
 
 
 def _reveal(text, rx):
