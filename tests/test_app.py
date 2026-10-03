@@ -223,3 +223,13 @@ def test_app_icon_renders_at_small_and_large_sizes(qtbot):
     icon = app_icon()
     assert not icon.isNull()
     assert {s.width() for s in icon.availableSizes()} >= {16, 256}
+
+
+def test_long_flag_callout_wraps_and_focus_follows(qtbot):
+    from pr_swipe.gui.app import DiffView
+    v = DiffView(); qtbot.addWidget(v); v.resize(400, 300)
+    why = "word " * 80
+    v.show_lines([("hunk", "@@ -1 +1 @@"), ("ai", f"⚠ AI high · unverified — {why}"), ("add", "+x = 1")], focus=2)
+    kinds = [k for k, _ in v.lines]
+    assert kinds.count("ai") > 1 and kinds[-1] == "add"
+    assert v.textCursor().blockNumber() == len(v.lines) - 1

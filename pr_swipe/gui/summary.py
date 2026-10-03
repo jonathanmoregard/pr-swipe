@@ -35,6 +35,18 @@ def clean_body(body):
     return text
 
 
+def desc_preview(body, lines=4):
+    """Collapsed description: the first paragraph, at most `lines` lines, stopping before a table or
+    code fence so the preview never ends mid-row."""
+    out = []
+    for line in clean_body(body).lstrip("\n").splitlines():
+        if not line.strip() or line.lstrip().startswith(("|", "```", "~~~")) or len(out) == lines:
+            break
+        out.append(line)
+    text = "\n".join(out).strip()
+    return text or "_(starts with a table or code block · d expands)_"
+
+
 def short(text, limit=STEP_MAX):
     """First sentence, whitespace collapsed, capped."""
     text = re.sub(r"\s+", " ", text or "").strip()

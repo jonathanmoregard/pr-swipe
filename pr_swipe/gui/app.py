@@ -6,10 +6,11 @@ AI panels, files + diff review area, coverage gate, key hints, and a status stri
 """
 import html
 import sys
+import textwrap
 import time
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import (QColor, QFont, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
                            QTextDocument, QTextFormat, QTextFrameFormat, QTextLength, QTextTable)
 from PySide6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar,
@@ -136,12 +137,34 @@ class DiffView(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.setFocusPolicy(Qt.NoFocus)  # arrow keys belong to the deck, not the text pane
         self.highlighter = DiffHighlighter(self.document())  # keep a reference or Qt drops it
-        self.lines = []
+        self.lines, self.raw, self.raw_cols = [], None, 0
+
+    def _cols(self):
+        bold = QFont(self.font()); bold.setWeight(QFont.DemiBold)  # callouts render bold, which runs wider
+        per_char = max(1, QFontMetrics(bold).horizontalAdvance("M" * 100)) / 100  # one "M" rounds to whole pixels
+        return max(40, int((self.viewport().width() - 2 * self.document().documentMargin()) / per_char) - 2)
+
+    def resizeEvent(self, e):  # noqa: N802 (Qt override): re-wrap callouts to the new width
+        super().resizeEvent(e)
+        if self.raw and self._cols() != self.raw_cols:
+            pos = self.verticalScrollBar().value()
+            self.show_lines(*self.raw)
+            self.verticalScrollBar().setValue(pos)
 
     def show_lines(self, lines, focus=None, path=None):
         """lines: [(kind, text)]. focus: index of a line to centre on. path: file name for syntax colours
-        (whole-diff mode takes it from the `file` lines)."""
-        self.lines = lines
+        (whole-diff mode takes it from the `file` lines). Flag callouts wrap to the pane width; code stays unwrapped."""
+        self.raw = (lines, focus, path)
+        cols = self._cols()
+        wrapped = []
+        for i, (kind, text) in enumerate(lines):
+            if i == focus:
+                focus = len(wrapped)
+            if kind in ("ai", "rule") and len(text) > cols:
+                wrapped += [(kind, t) for t in textwrap.wrap(text, cols, subsequent_indent="   ")]
+            else:
+                wrapped.append((kind, text))
+        lines, self.lines, self.raw_cols = wrapped, wrapped, cols
         self.highlighter.kinds = [k for k, _ in lines]
         self.highlighter.spans = SX.spans(lines, path)
         self.setPlainText("\n".join(t for _, t in lines))
@@ -681,7 +704,8 @@ class Window(QMainWindow):
         self.desc_title.setText(("▾ " if self.desc_open else "▸ ") + "DESCRIPTION")
         self.desc_source.setText("PR body · verified ✓" if rec else "not verified")
         set_props(self.desc_source, tone="sprout" if rec else "muted")
-        self.desc_view.show_markdown(SU.clean_body(body) if body.strip() else
+        shown = SU.clean_body(body) if self.desc_open else SU.desc_preview(body)
+        self.desc_view.show_markdown(shown if body.strip() else
                                      ("_(no description)_" if rec else "_No verified description for this card._"))
         lines = len([l for l in body.splitlines() if l.strip()])
         notes = []
@@ -692,7 +716,11 @@ class Window(QMainWindow):
         notes.append("raw HTML and images not rendered · d " + ("collapses" if self.desc_open else "expands"))
         self.desc_footer.setText(" · ".join(notes))
         lh = self.desc_view.fontMetrics().lineSpacing()
-        self.desc_view.setMaximumHeight(16777215 if self.desc_open else int(lh * 1.5 * 4) + 12)
+        if self.desc_open:
+            self.desc_view.setMaximumHeight(16777215)
+        else:  # fit the preview paragraph, up to six lines, so the cut never lands mid-line
+            doc = self.desc_view.document(); doc.setTextWidth(self.desc_view.viewport().width())
+            self.desc_view.setMaximumHeight(int(min(doc.size().height(), lh * 1.5 * 6)) + 12)
         commits = c.get("_commits", [])
         self.commits_title.setText(f"COMMITS · {len(commits)}")
         clear(self.commits_grid)

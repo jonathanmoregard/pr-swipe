@@ -98,3 +98,11 @@ def test_step_text_is_a_glance_and_intent_prefers_the_stated_value():
     assert pr == "PR says: The server was spawned from a config."
     c["context"]["purpose"] = ""
     assert SU.intent(c) == ("The server was spawned from a config.", "first sentence of PR body · verified ✓", "sprout", "")
+
+
+def test_description_preview_stops_before_a_table_or_fence():
+    body = "Bumps foo.\n\nWhy now.\n| a | b |\n|---|---|\n| 1 | 2 |\nmore"
+    assert SU.desc_preview(body) == "Bumps foo."
+    assert SU.desc_preview("Why now.\n| a | b |") == "Why now."
+    assert SU.desc_preview("```\ncode\n```") == "_(starts with a table or code block · d expands)_"
+    assert SU.desc_preview("1\n2\n3\n4\n5\n6") == "1\n2\n3\n4"
