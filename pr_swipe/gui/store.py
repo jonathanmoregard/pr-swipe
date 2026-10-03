@@ -1,5 +1,6 @@
-"""GUI-side state: decided cards, gate metrics, outbox requests, returned-card notes."""
+"""GUI-side state: decided cards, feedback log, outbox requests, returned-card notes."""
 import json
+import os
 import socket
 import time
 import uuid
@@ -9,13 +10,14 @@ from ..card import write_json_atomic
 from .deck import card_key
 
 RETURN_TTL = 7 * 86400
+NOTE_MAX = 4000
 
 
 class Store:
     def __init__(self, cfg, clock=time.time):
         self.cfg, self.clock = cfg, clock
         self.state_file = cfg.state / "gui-state.json"
-        self.metrics_file = cfg.state / "metrics.jsonl"
+        self.feedback_file = cfg.state / "feedback.jsonl"  # local only: never commit or upload
 
     def _load(self):
         return json.loads(self.state_file.read_text()) if self.state_file.exists() else {"decided": {}}
@@ -26,27 +28,46 @@ class Store:
     def decided(self) -> dict:
         return self._load()["decided"]
 
-    def mark_decided(self, card, action, dwell, detail):
+    def _append(self, row):
+        fd = os.open(self.feedback_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "a") as f:
+            f.write(json.dumps(row) + "\n")
+
+    def _row(self, card, action, **extra):
+        v = card["verdict"]
+        override = (action, v["recommendation"]) in (("approve", "close"), ("close", "approve"))
+        return {"ts": self.clock(), "key": card_key(card), "action": action, "repo": card["repo"],
+                "number": card["number"], "author_class": card["author_class"],
+                "ai": {"recommendation": v["recommendation"], "confidence": v["confidence"],
+                       "stale": v["stale"], "superseded": bool(v["superseded_by"])},
+                "override": override, **extra}
+
+    def mark_decided(self, card, action, dwell, detail, one_off=False):
         st = self._load()
         st["decided"][card_key(card)] = self.clock()
         self._save(st)
-        with open(self.metrics_file, "a") as f:
-            f.write(json.dumps({"ts": self.clock(), "key": card_key(card), "action": action,
-                                "dwell": round(dwell, 2), "detail": detail}) + "\n")
+        self._append(self._row(card, action, dwell=round(dwell, 2), detail=detail, one_off=one_off))
 
-    def undo(self, card):
+    def undo(self, card, reason="human"):
         st = self._load()
         st["decided"].pop(card_key(card), None)
         self._save(st)
-        with open(self.metrics_file, "a") as f:
-            f.write(json.dumps({"ts": self.clock(), "key": card_key(card), "action": "undo",
-                                "dwell": 0, "detail": False}) + "\n")
+        self._append(self._row(card, "undo", reason=reason))
+
+    def record(self, card, action, note=None, hotspot=None, one_off=False):
+        """Non-decision feedback: skip, deep-review, note, missed (an issue the AI did not flag)."""
+        row = self._row(card, action, one_off=one_off)
+        if note is not None:
+            row["note"] = note[:NOTE_MAX]
+        if hotspot is not None:
+            row["hotspot"] = {"file": hotspot["file"], "hunk": hotspot["hunk"], "source": hotspot["source"]}
+        self._append(row)
 
     def metrics(self, days=7) -> list:
-        if not self.metrics_file.exists():
+        if not self.feedback_file.exists():
             return []
         cutoff = self.clock() - days * 86400
-        rows = [json.loads(l) for l in self.metrics_file.read_text().splitlines() if l.strip()]
+        rows = [json.loads(l) for l in self.feedback_file.read_text().splitlines() if l.strip()]
         kept, latest = [], {}
         for r in rows:  # an undo row (human undo or executor refusal) cancels that key's latest decision
             if r["action"] == "undo":

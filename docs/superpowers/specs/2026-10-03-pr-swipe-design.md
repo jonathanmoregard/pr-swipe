@@ -296,3 +296,13 @@ X11 injection residual. Decision explicitly postponed by the user.
   merge attempt fails.
 - NixOS: VM test lane asserting the executor socket is not connectable by `jonathan`
   and the credential is unreadable by `jonathan`.
+
+## Addendum 2026-10-03: feedback capture (learning loop deferred)
+
+The GUI logs typed feedback to `state/feedback.jsonl` (mode 0600, local only, never committed or uploaded):
+decisions (approve/close with dwell, detail-seen, AI verdict, `override` = swipe contradicts AI approve/close),
+undo (`reason` human|refused), skip, deep-review, `note` (key `n`, optionally pinned to a hotspot) and
+`missed` (key `m`, an issue the AI did not flag). Key `x` marks the card one-off ("don't learn from this").
+No learning consumes this yet. Design review scheduled 2026-10-17, informed by
+`research-agent/reports/d6441685112c4dd6ab6654e15e7b888d.md`: memory writes only from human actions,
+human-approved rules, approve/close never trains the finder, replay set + cold slice before any learning.

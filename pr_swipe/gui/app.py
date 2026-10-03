@@ -4,7 +4,8 @@ import time
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
-from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, QPlainTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QInputDialog, QLabel, QMainWindow, QPlainTextEdit, QVBoxLayout,
+                               QWidget)
 
 from .. import card as C
 from ..config import load
@@ -43,7 +44,7 @@ class Window(QMainWindow):
         super().__init__()
         self.store, self.client, self.load_cards, self.clock, self.undo_ms = store, client, load_cards, clock, undo_ms
         self.deck, self.idx, self.armed, self.shown_at = [], 0, None, clock()
-        self.detail_open, self.detail_seen, self.pending = False, False, None
+        self.detail_open, self.detail_seen, self.pending, self.one_off = False, False, None, False
         self.setWindowTitle("pr-swipe")
         self.title_label = _plain_label(bold=True)
         self.meta_label = _plain_label()
@@ -80,7 +81,7 @@ class Window(QMainWindow):
     # --- rendering ---
     def render(self):
         c = self.current()
-        self.armed, self.shown_at, self.detail_seen = None, self.clock(), False
+        self.armed, self.shown_at, self.detail_seen, self.one_off = None, self.clock(), False, False
         if c is None:
             self.title_label.setText("Inbox zero.")
             for w in (self.meta_label, self.context_label):
@@ -132,7 +133,8 @@ class Window(QMainWindow):
 
     def _footer(self, msg=""):
         s = D.stats(self.store.metrics(days=7))
-        keys = "← close  → approve  ↑ deep AI review  ↓ detail  o browser  s skip  u undo"
+        keys = ("← close  → approve  ↑ deep AI review  ↓ detail  o browser  s skip  u undo\n"
+                "n note  m AI missed something  x one-off (don't learn)" + ("  [ONE-OFF]" if self.one_off else ""))
         gate = (f"7d: {s['n']} decisions · median approve {s['median_approve_s']:.0f}s · "
                 f"close {s['close_rate']:.0%} · detail {s['detail_rate']:.0%}")
         pend = f" · pending: {self.pending[1]} {self.pending[0]['repo']}#{self.pending[0]['number']}" if self.pending else ""
@@ -154,10 +156,19 @@ class Window(QMainWindow):
             return self._render_body()
         if k == Qt.Key_O:
             return self.store.request_open(c["url"])
+        if k == Qt.Key_X:
+            self.one_off = not self.one_off
+            return self._footer()
+        if k == Qt.Key_N:
+            return self.note(c, "note")
+        if k == Qt.Key_M:
+            return self.note(c, "missed")
         if k == Qt.Key_S:
+            self.store.record(c, "skip", one_off=self.one_off)
             return self._advance(skip=True)
         if k == Qt.Key_Up:
             self.store.request_deep_review(c)
+            self.store.record(c, "deep-review", one_off=self.one_off)
             return self._advance(skip=True)
         if k in (Qt.Key_Left, Qt.Key_Right):
             return self.decide(c, "close" if k == Qt.Key_Left else "approve")
@@ -177,11 +188,36 @@ class Window(QMainWindow):
         decision = {"action": action, "repo": c["repo"], "number": c["number"], "head_sha": c["head_sha"],
                     "card_sha256": C.digest({k: v for k, v in c.items() if not k.startswith("_")}),
                     "ts": self.clock()}
-        self.store.mark_decided(c, action, dwell=dwell, detail=self.detail_seen)
+        self.store.mark_decided(c, action, dwell=dwell, detail=self.detail_seen, one_off=self.one_off)
         self.pending = (c, action, decision)
         if self.undo_ms > 0:
             QTimer.singleShot(self.undo_ms, self.flush_pending)
         self._advance(skip=False)
+
+    # --- feedback capture (logged locally for the future learning loop; never sent anywhere) ---
+    def ask_text(self, title, label):
+        text, ok = QInputDialog.getMultiLineText(self, title, label)
+        return text.strip() if ok and text.strip() else None
+
+    def ask_item(self, title, label, items):
+        item, ok = QInputDialog.getItem(self, title, label, items, 0, False)
+        return items.index(item) if ok else None
+
+    def note(self, c, kind):
+        hotspot = None
+        if kind == "note" and c["hotspots"] and not self.detail_open:
+            items = ["whole PR"] + [f"{i}: {h['file']}  {h['hunk'][:80]}" for i, h in enumerate(c["hotspots"], 1)]
+            pick = self.ask_item("Note on…", "Attach the note to:", items)
+            if pick is None:
+                return
+            hotspot = c["hotspots"][pick - 1] if pick else None
+        label = ("What did the AI miss? (file/line, what is wrong, why it matters)" if kind == "missed"
+                 else "Your note: what is right or wrong here, and why")
+        text = self.ask_text("Feedback", label)
+        if text is None:
+            return self._footer("feedback discarded")
+        self.store.record(c, kind, note=text, hotspot=hotspot, one_off=self.one_off)
+        self._footer(f"{kind} saved")
 
     def flush_pending(self):
         if not self.pending:
@@ -190,7 +226,7 @@ class Window(QMainWindow):
         self.pending = None
         r = self.client.send(decision)
         if not r.get("ok"):
-            self.store.undo(c)
+            self.store.undo(c, reason="refused")
             self.reload()
             keys = [D.card_key(x) for x in self.deck]
             if D.card_key(c) in keys:  # put the refused card back in front of the human

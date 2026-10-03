@@ -69,3 +69,20 @@ def test_metrics_exclude_undone_decisions(tmp_path):
     t["now"] = 3.0
     s.mark_decided(a, "close", dwell=4.0, detail=True)
     assert [(r["key"].split("@")[0], r["action"]) for r in s.metrics()] == [("o/r#2", "close"), ("o/r#1", "close")]
+
+
+def test_feedback_rows_carry_ai_verdict_override_and_are_private(tmp_path):
+    import stat
+    from pr_swipe.gui.store import NOTE_MAX
+    c = cfg(tmp_path)
+    s = Store(c, clock=lambda: 5.0)
+    card = make_card()
+    card["verdict"]["recommendation"] = "close"
+    s.mark_decided(card, "approve", dwell=1.0, detail=True, one_off=True)
+    s.record(card, "note", note="x" * (NOTE_MAX + 10),
+             hotspot={"file": "a.py", "hunk": "@@", "lines": "+secret", "source": "ai"})
+    rows = [json.loads(l) for l in (c.state / "feedback.jsonl").read_text().splitlines()]
+    assert rows[0]["override"] is True and rows[0]["one_off"] is True and rows[0]["ai"]["recommendation"] == "close"
+    assert rows[1]["override"] is False and len(rows[1]["note"]) == NOTE_MAX
+    assert rows[1]["hotspot"] == {"file": "a.py", "hunk": "@@", "source": "ai"}
+    assert stat.S_IMODE((c.state / "feedback.jsonl").stat().st_mode) == 0o600

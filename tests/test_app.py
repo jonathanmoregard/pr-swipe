@@ -6,12 +6,16 @@ from tests.cards import make_card
 class FakeStore:
     def __init__(self, cards):
         self.cards, self.marked, self.undone, self.opened, self.deep = cards, [], [], [], []
+        self.recorded, self.one_offs = [], []
     def decided(self): return {}
     def returns(self): return []
     def in_train(self): return set()
     def metrics(self, days=7): return []
-    def mark_decided(self, c, a, dwell, detail): self.marked.append((c["number"], a))
-    def undo(self, c): self.undone.append(c["number"])
+    def mark_decided(self, c, a, dwell, detail, one_off=False):
+        self.marked.append((c["number"], a)); self.one_offs.append(one_off)
+    def undo(self, c, reason="human"): self.undone.append((c["number"], reason))
+    def record(self, c, action, note=None, hotspot=None, one_off=False):
+        self.recorded.append((c["number"], action, note, hotspot and hotspot["file"], one_off))
     def request_open(self, url): self.opened.append(url)
     def request_deep_review(self, c): self.deep.append(c["number"])
 
@@ -56,7 +60,7 @@ def test_undo_cancels_pending_decision(qtbot):
     qtbot.keyClick(w, Qt.Key_Right)
     qtbot.keyClick(w, Qt.Key_U)
     w.flush_pending()
-    assert client.sent == [] and store.undone == [1]
+    assert client.sent == [] and store.undone == [(1, "human")]
 
 
 def test_up_requests_deep_review_and_down_toggles_detail(qtbot):
@@ -77,3 +81,45 @@ def test_external_repo_card_opens_browser_instead_of_deciding(qtbot):
 def test_card_text_is_rendered_as_plain_text(qtbot):
     w, *_ = make(qtbot, [make_card(title="<b>bold</b><img src=x>")])
     assert w.title_label.textFormat() == Qt.PlainText
+
+
+class RefusingClient(FakeClient):
+    def send(self, d): self.sent.append(d); return {"ok": False, "error": "nope"}
+
+
+def test_executor_refusal_is_logged_as_refused(qtbot):
+    w, store, _, _ = make(qtbot, [make_card()])
+    w.client = RefusingClient()
+    qtbot.keyClick(w, Qt.Key_Right)
+    w.flush_pending()
+    assert store.undone == [(1, "refused")]
+
+
+def hot(file="f.py"):
+    return {"source": "ai", "file": file, "hunk": "@@ -1 +1 @@", "lines": "+x", "why": "w", "severity": "high"}
+
+
+def test_note_attaches_to_picked_hotspot(qtbot):
+    w, store, _, _ = make(qtbot, [make_card(hotspots=[hot("a.py"), hot("b.py")])])
+    w.ask_item = lambda *a: 2
+    w.ask_text = lambda *a: "b.py swallows the error"
+    qtbot.keyClick(w, Qt.Key_N)
+    assert store.recorded == [(1, "note", "b.py swallows the error", "b.py", False)]
+
+
+def test_missed_and_cancelled_feedback(qtbot):
+    w, store, _, _ = make(qtbot, [make_card(hotspots=[hot()])])
+    w.ask_text = lambda *a: None
+    qtbot.keyClick(w, Qt.Key_M)
+    assert store.recorded == []
+    w.ask_text = lambda *a: "race in train.py:40"
+    qtbot.keyClick(w, Qt.Key_M)
+    assert store.recorded == [(1, "missed", "race in train.py:40", None, False)]
+
+
+def test_one_off_flag_rides_on_decision_and_resets(qtbot):
+    w, store, _, _ = make(qtbot, [make_card(), make_card(number=2)])
+    qtbot.keyClick(w, Qt.Key_X)
+    qtbot.keyClick(w, Qt.Key_Right)
+    qtbot.keyClick(w, Qt.Key_S)
+    assert store.one_offs == [True] and store.recorded == [(2, "skip", None, None, False)]
