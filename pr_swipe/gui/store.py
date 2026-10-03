@@ -63,11 +63,14 @@ class Store:
             row["hotspot"] = {"file": hotspot["file"], "hunk": hotspot["hunk"], "source": hotspot["source"]}
         self._append(row)
 
-    def metrics(self, days=7) -> list:
+    def rows(self) -> list:
         if not self.feedback_file.exists():
             return []
+        return [json.loads(l) for l in self.feedback_file.read_text().splitlines() if l.strip()]
+
+    def metrics(self, days=7) -> list:
         cutoff = self.clock() - days * 86400
-        rows = [json.loads(l) for l in self.feedback_file.read_text().splitlines() if l.strip()]
+        rows = self.rows()
         kept, latest = [], {}
         for r in rows:  # an undo row (human undo or executor refusal) cancels that key's latest decision
             if r["action"] == "undo":

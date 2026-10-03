@@ -6,7 +6,7 @@ from tests.cards import make_card
 class FakeStore:
     def __init__(self, cards):
         self.cards, self.marked, self.undone, self.opened, self.deep = cards, [], [], [], []
-        self.recorded, self.one_offs = [], []
+        self.recorded, self.one_offs, self.feedback = [], [], []
     def decided(self): return {}
     def returns(self): return []
     def in_train(self): return set()
@@ -18,6 +18,7 @@ class FakeStore:
         self.recorded.append((c["number"], action, note, hotspot and hotspot["file"], one_off))
     def request_open(self, url): self.opened.append(url)
     def request_deep_review(self, c): self.deep.append(c["number"])
+    def rows(self): return self.feedback
 
 
 class FakeClient:
@@ -25,11 +26,13 @@ class FakeClient:
     def send(self, d): self.sent.append(d); return {"ok": True}
 
 
-def make(qtbot, cards, clock=None):
+def make(qtbot, cards, clock=None, start=True):
     store, client = FakeStore(cards), FakeClient()
     t = {"now": 100.0}
     w = Window(store, client, load_cards=lambda: store.cards, clock=clock or (lambda: t["now"]), undo_ms=0)
     qtbot.addWidget(w)
+    if start:
+        w.begin_quest()
     return w, store, client, t
 
 
@@ -123,3 +126,34 @@ def test_one_off_flag_rides_on_decision_and_resets(qtbot):
     qtbot.keyClick(w, Qt.Key_Right)
     qtbot.keyClick(w, Qt.Key_S)
     assert store.one_offs == [True] and store.recorded == [(2, "skip", None, None, False)]
+
+
+def test_quest_start_screen_gates_the_first_key(qtbot):
+    w, store, client, _ = make(qtbot, [make_card(), make_card(number=2, hotspots=[hot()])], start=False)
+    assert "quest" in w.title_label.text().lower() and "2 encounters" in w.context_label.text()
+    qtbot.keyClick(w, Qt.Key_Right)          # begins the quest, decides nothing
+    w.flush_pending()
+    assert client.sent == [] and w.quest_started
+    assert "encounter 1/2" in w.encounter_label.text()
+
+
+def test_encounter_header_and_sharp_eye_toast(qtbot):
+    card = make_card(ci={"state": "failure", "failing": ["t"]})
+    w, store, _, _ = make(qtbot, [card])
+    assert "Dragon" in w.encounter_label.text()
+    w.ask_text = lambda *a: "off-by-one in train.py"
+    qtbot.keyClick(w, Qt.Key_M)
+    assert "Sharp eye" in w.footer.text()
+
+
+def test_quest_complete_shows_recap_of_care(qtbot):
+    w, store, client, t = make(qtbot, [make_card()])
+    store.feedback = [{"ts": t["now"], "key": "k", "action": "missed", "override": False, "ai": {}},
+                      {"ts": t["now"], "key": "o/r#1@" + "a" * 40, "action": "approve", "override": False,
+                       "ai": {"recommendation": "approve"}}]
+    qtbot.keyClick(w, Qt.Key_Right)
+    w.flush_pending()
+    store.cards = []
+    w.reload()
+    text = w.title_label.text() + w.context_label.text()
+    assert "1 sharp-eye find" in text and "1 approved" in text
