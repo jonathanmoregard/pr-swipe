@@ -879,7 +879,9 @@ class Window(QMainWindow):
         if self.review is None and not c["hotspots"]:  # nothing flagged: the whole diff is the review
             lines = RV.render_diff(c["detail"]["diff"], [])
             self.diff_path.setText("diff"); self.diff_info.setText("no hotspots flagged"); self.hunk_state.setText("")
-            return self.body.show_lines(lines or [("meta", "This card carries no diff.")])
+            empty = ("GitHub would not send a diff this large. o opens the PR in the browser."
+                     if c["detail"]["truncated"] else "This card carries no diff.")
+            return self.body.show_lines(lines or [("meta", empty)])
         if self.review is None:
             lines = []
             for h in c["hotspots"]:

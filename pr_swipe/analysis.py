@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 
 MAX_HOTSPOT_LINES = 40
+MAX_HOTSPOT_LINE = 400  # one minified line must not blow the card's 20000-char hotspot cap
 
 
 @dataclass
@@ -77,11 +78,16 @@ LINE_RULES = [
 LARGE_DELETION = 50
 
 
+def hotspot_lines(hunk) -> str:
+    return "\n".join(l if len(l) <= MAX_HOTSPOT_LINE else l[:MAX_HOTSPOT_LINE] + " …[line truncated]"
+                     for l in hunk.lines[:MAX_HOTSPOT_LINES])
+
+
 def _spot(rule, f, hunk):
     return {
         "source": "rule", "rule": rule, "file": f.path,
         "hunk": hunk.header if hunk else "",
-        "lines": "\n".join(hunk.lines[:MAX_HOTSPOT_LINES]) if hunk else "",
+        "lines": hotspot_lines(hunk) if hunk else "",
     }
 
 

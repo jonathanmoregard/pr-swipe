@@ -40,7 +40,10 @@ class FakeGitHub:
         return dict(self.prs[(repo, n)])
 
     def pr_diff(self, repo, n):
-        return self.diffs[(repo, n)]
+        d = self.diffs[(repo, n)]
+        if isinstance(d, Exception):
+            raise d
+        return d
 
     def pr_commits(self, repo, n):
         return [{"commit": {"message": "commit msg", "author": {"date": "2026-09-30T00:00:00Z"}}}]

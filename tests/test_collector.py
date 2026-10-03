@@ -96,3 +96,29 @@ def test_a_network_blip_does_not_kill_the_loop(tmp_path, monkeypatch):
     monkeypatch.setattr(K, "process_outbox", lambda *a: calls.append("outbox"))
     last = K.tick(last=0.0, now=1000.0, interval=600, gh=None, rv=None, cfg=None)
     assert calls == ["collect", "outbox"] and last == 1000.0   # outbox still served; retry next interval
+
+
+def test_diff_too_large_for_the_api_still_produces_a_card(tmp_path):
+    gh, rv, c = FakeGitHub(), FakeReviewer(), cfg(tmp_path)
+    gh.add_pr("jonathanmoregard/x", 8, "a" * 40,
+              diff=K.GitHubError(406, {"message": "Sorry, the diff exceeded the maximum number of lines (20000)",
+                                       "errors": [{"code": "too_large"}]}))
+    gh.prs[("jonathanmoregard/x", 8)].update(additions=25000, deletions=3, changed_files=40)
+    K.collect_once(gh, rv, c)
+    card = C.load_cards(c.inbox)[0]
+    assert rv.diff_calls == 0
+    assert card["detail"]["diff"] == "" and card["detail"]["truncated"] is True
+    assert card["diffstat"] == {"files": 40, "additions": 25000, "deletions": 3}
+    assert card["verdict"]["recommendation"] == "look" and "too large" in card["verdict"]["reason"]
+
+
+def test_a_minified_line_is_clipped_not_dropped(tmp_path):
+    gh, c = FakeGitHub(), cfg(tmp_path)
+    huge = "x" * 50000
+    gh.add_pr("jonathanmoregard/x", 9, "a" * 40, diff=(
+        "diff --git a/package.json b/package.json\n--- a/package.json\n+++ b/package.json\n"
+        f'@@ -1,1 +1,2 @@\n "name": "a",\n+"postinstall": "{huge}"\n'))
+    K.collect_once(gh, FakeReviewer(), c)
+    card = C.load_cards(c.inbox)[0]
+    spot = next(h for h in card["hotspots"] if h["source"] == "rule")
+    assert len(spot["lines"]) < 20000 and "truncated" in spot["lines"]

@@ -48,9 +48,23 @@ class Reviewer:
         return reviewer.review_context(pr, commits, open_titles, merged_titles, model)
 
 
+TOO_LARGE = "diff too large for GitHub's API (over 20000 lines or 300 files): review it in the browser"
+
+
+def fetch_diff(gh, repo, n):
+    """The PR diff, or None when GitHub refuses to render one that large (HTTP 406 too_large)."""
+    try:
+        return gh.pr_diff(repo, n)
+    except GitHubError as e:
+        if e.status == 406:
+            return None
+        raise
+
+
 def build_card(gh, rv, cfg, repo, n, open_prs_files):
     pr = gh.pr(repo, n)
-    diff = gh.pr_diff(repo, n)
+    diff = fetch_diff(gh, repo, n)
+    too_large, diff = diff is None, diff or ""
     files = analysis.parse_diff(diff)
     rule_spots = analysis.rule_hotspots(files)
     comments = gh.issue_comments(repo, n)
@@ -68,8 +82,8 @@ def build_card(gh, rv, cfg, repo, n, open_prs_files):
     ai_spots = []
     context = {"purpose": "", "solution": "", "notes": ""}
     verdict = {"recommendation": "look", "stale": stale_signal, "superseded_by": [],
-               "confidence": "low", "reason": "no AI review: external author"}
-    if klass != "external":
+               "confidence": "low", "reason": TOO_LARGE if too_large else "no AI review: external author"}
+    if klass != "external" and not too_large:
         try:
             d = rv.review_diff(diff, files, rule_spots, cfg.model)
             ai_spots = reviewer.resolve_hotspots(d["hotspots"], files)
@@ -95,12 +109,13 @@ def build_card(gh, rv, cfg, repo, n, open_prs_files):
         "can_merge": repo.split("/")[0] == cfg.user,
         "ci": gh.ci_state(repo, pr["head"]["sha"]),
         "mergeable": MERGEABLE.get(pr.get("mergeable_state"), "unknown"),
-        "diffstat": analysis.diffstat(files),
+        "diffstat": ({"files": pr.get("changed_files", 0), "additions": pr.get("additions", 0),
+                      "deletions": pr.get("deletions", 0)} if too_large else analysis.diffstat(files)),
         "hotspots": rule_spots + ai_spots,
         "hidden_content": [dict(h, text=h["text"][:2000], where=h["where"][:600]) for h in hidden],
         "context": context, "verdict": verdict,
         "signals": {"days_since_update": since, "overlapping_open": overlapping},
-        "detail": {"diff": diff[:MAX_DETAIL_DIFF], "truncated": len(diff) > MAX_DETAIL_DIFF,
+        "detail": {"diff": diff[:MAX_DETAIL_DIFF], "truncated": too_large or len(diff) > MAX_DETAIL_DIFF,
                    "comments": [{"author": cm["user"]["login"][:100], "body": (cm.get("body") or "")[:20000]}
                                 for cm in comments]},
         "review_meta": {"model": cfg.model, "reviewed_at": now_iso(), "prose_seen": False},
@@ -119,7 +134,7 @@ def collect_once(gh, rv, cfg):
         try:
             pr = gh.pr(repo, n)
             heads[(repo, n)] = pr
-            files_by_repo.setdefault(repo, {})[n] = {f.path for f in analysis.parse_diff(gh.pr_diff(repo, n))}
+            files_by_repo.setdefault(repo, {})[n] = {f.path for f in analysis.parse_diff(fetch_diff(gh, repo, n) or "")}
         except GitHubError as e:
             log.warning("skip %s#%s: %s", repo, n, e)
     for (repo, n), pr in heads.items():

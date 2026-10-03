@@ -100,7 +100,7 @@ def resolve_hotspots(ai_spots, files) -> list:
         if hunk is None:
             continue
         out.append({"source": "ai", "file": s["file"], "hunk": hunk.header,
-                    "lines": "\n".join(hunk.lines[:analysis.MAX_HOTSPOT_LINES]),
+                    "lines": analysis.hotspot_lines(hunk),
                     "why": s["why"], "severity": s["severity"]})
     return out
 

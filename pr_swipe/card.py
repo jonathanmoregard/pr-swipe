@@ -93,7 +93,7 @@ def validate(card: dict) -> dict:
     try:
         jsonschema.validate(card, SCHEMA)
     except jsonschema.ValidationError as e:
-        raise CardError(e.message) from None
+        raise CardError(e.message[:300]) from None
     return card
 
 
