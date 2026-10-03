@@ -214,3 +214,10 @@ def test_dragon_approve_waits_for_every_flagged_hunk(qtbot):
     qtbot.keyClick(w, Qt.Key_Right)
     w.flush_pending()
     assert client.sent and client.sent[0]["action"] == "approve"
+
+
+def test_app_icon_renders_at_small_and_large_sizes(qtbot):
+    from pr_swipe.gui.style import app_icon
+    icon = app_icon()
+    assert not icon.isNull()
+    assert {s.width() for s in icon.availableSizes()} >= {16, 256}

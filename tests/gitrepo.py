@@ -12,7 +12,7 @@ def git(cwd, *args) -> str:
                           text=True).stdout.strip()
 
 
-def make_origin(tmp: Path, number=7, files=None):
+def make_origin(tmp: Path, number=7, files=None, msg="feat: change"):
     """Work repo with main + a PR branch; a bare origin exposing refs/pull/N/head. Returns dict."""
     work, origin = tmp / "work", tmp / "origin.git"
     work.mkdir()
@@ -25,7 +25,7 @@ def make_origin(tmp: Path, number=7, files=None):
         p = work / path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
-    git(work, "add", "-A"); git(work, "commit", "-qm", "feat: change")
+    git(work, "add", "-A"); git(work, "commit", "-qm", msg)
     head = git(work, "rev-parse", "HEAD")
     git(tmp, "init", "-q", "--bare", str(origin))
     git(work, "push", "-q", str(origin), "main", f"pr:refs/pull/{number}/head")

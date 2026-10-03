@@ -18,6 +18,9 @@
         preCheck = "export QT_QPA_PLATFORM=offscreen HOME=$TMPDIR";
         # verify.py and gitview.py shell out to git at runtime.
         makeWrapperArgs = [ "--prefix" "PATH" ":" "${pkgs.git}/bin" ];
+        postInstall = ''
+          install -Dm644 pr_swipe/gui/icon.svg $out/share/icons/hicolor/scalable/apps/pr-swipe.svg
+        '';
       };
     in {
       packages.${system}.default = pr-swipe;

@@ -912,6 +912,8 @@ def main():
     cfg = load()
     app = QApplication(sys.argv)
     app.setFont(S.ui_font())
+    app.setWindowIcon(S.app_icon())
+    app.setDesktopFileName("pr-swipe")
     w = Window(Store(cfg), ExecutorClient(cfg.socket),
                load_cards=lambda: EV.verified_cards(cfg, C.load_cards(cfg.inbox)))
     w.show()

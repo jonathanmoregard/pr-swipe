@@ -17,5 +17,8 @@ pr-swipe-apply-rulesets = "pr_swipe.rulesets:main"
 [tool.setuptools.packages.find]
 include = ["pr_swipe*"]
 
+[tool.setuptools.package-data]
+"pr_swipe.gui" = ["icon.svg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

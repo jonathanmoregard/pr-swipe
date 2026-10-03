@@ -3,7 +3,13 @@
 Dynamic properties drive variants: role (text style), tone (dragon/ai/sprout/ghost/traveler/muted),
 state, locked, kind, disabled. After changing one at runtime, call `repolish(widget)`.
 """
-from PySide6.QtGui import QColor, QFont, QFontDatabase
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
+
+ICON = Path(__file__).with_name("icon.svg")
 
 UI_FAMILIES = ["IBM Plex Sans", "Segoe UI", "Noto Sans", "Cantarell", "DejaVu Sans"]
 MONO_FAMILIES = ["IBM Plex Mono", "JetBrains Mono", "DejaVu Sans Mono", "Consolas", "Liberation Mono"]
@@ -139,3 +145,13 @@ QLabel#chronicle, QLabel#gateHealth, QLabel#statusSep {{ font-size:11px; color:#
 
 QFrame#encounterTile {{ border-radius:6px; }}
 """
+
+
+def app_icon():
+    """The jewel, rasterised here so it does not depend on Qt's SVG icon-engine plugin being on the path."""
+    r, icon = QSvgRenderer(str(ICON)), QIcon()
+    for px in (16, 24, 32, 48, 64, 128, 256):
+        pm = QPixmap(px, px); pm.fill(Qt.transparent)
+        p = QPainter(pm); r.render(p); p.end()
+        icon.addPixmap(pm)
+    return icon
