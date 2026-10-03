@@ -16,6 +16,8 @@
         dependencies = deps py.pkgs;
         nativeCheckInputs = [ py.pkgs.pytestCheckHook py.pkgs.pytest-qt pkgs.git ];
         preCheck = "export QT_QPA_PLATFORM=offscreen HOME=$TMPDIR";
+        # verify.py and gitview.py shell out to git at runtime.
+        makeWrapperArgs = [ "--prefix" "PATH" ":" "${pkgs.git}/bin" ];
       };
     in {
       packages.${system}.default = pr-swipe;
