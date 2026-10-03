@@ -52,7 +52,12 @@ SCHEMA = {
                            "text": _SL(2000)}}},
         "context": {"type": "object", "additionalProperties": False,
                     "required": ["purpose", "solution", "notes"],
-                    "properties": {"purpose": _SL(1500), "solution": _SL(1500), "notes": _SL(1500)}},
+                    "properties": {"purpose": _SL(1500), "solution": _SL(1500), "notes": _SL(1500),
+                                   # owner briefing (cards from before 2026-10-03 lack it)
+                                   "headline": _SL(200), "why": _SL(250), "before": _SL(200), "after": _SL(200),
+                                   "how": {"type": "array", "maxItems": 4, "items": _SL(120)},
+                                   "manual": {"type": "array", "maxItems": 4, "items": _SL(200)},
+                                   "internal_only": {"type": "boolean"}, "unsure": _SL(300)}},
         "verdict": {"type": "object", "additionalProperties": False,
                     "required": ["recommendation", "stale", "superseded_by", "confidence", "reason"],
                     "properties": {

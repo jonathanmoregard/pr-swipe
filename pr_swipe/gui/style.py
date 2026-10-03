@@ -124,6 +124,7 @@ QLabel#stepSrc {{ font-size:11px; color:#8A867C; }}
 QLabel#stepSrc[source="ai"] {{ color:#8A5A00; }}
 QLabel#stepSrc[source="risk"] {{ color:#A93A2F; }}
 QLabel#stepArrow {{ font-size:13px; color:#B8B4AA; }}
+QLabel#manualSteps {{ color:#8A5A00; background:#FBF3E2; border:1px solid #EBD9B0; border-radius:6px; padding:6px 10px; font-weight:600; }}
 QLabel#unverifiedTag[state="none"] {{ color:#8A867C; border:1px solid #D2CEC4; }}
 QLabel#warnCount {{ font-family:"{mono}"; font-size:11px; color:#8A867C; }}
 QLabel#warnCount[risky="true"] {{ color:#A93A2F; }}

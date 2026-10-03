@@ -151,6 +151,9 @@ def solution_path(card, commits=()):
     for h in card.get("hotspots", []):
         if h.get("source") == "rule":
             rule.setdefault(h["file"], h)
+    how = card.get("context", {}).get("how") or []
+    if how:  # the owner briefing: what happens, in watchable steps; risks live in the meta line and warnings
+        return [{"text": short(h, STEP_MAX), "src": "AI · unverified", "source": "ai"} for h in how[:MAX_STEPS]]
     ai_solution = (card.get("context", {}).get("solution") or "").strip()
     steps = []
     if ai_solution:
@@ -181,7 +184,14 @@ def solution_path(card, commits=()):
     return steps[:MAX_STEPS]
 
 
+def manual_steps(card):
+    """What the owner must still do by hand after merging, per the AI briefing."""
+    return [short(m, STEP_MAX) for m in card.get("context", {}).get("manual") or []]
+
+
 def path_source_note(card):
+    if card.get("context", {}).get("how"):
+        return "what happens, step by step · AI · unverified"
     if (card.get("context", {}).get("solution") or "").strip():
         return "from commits, files, CI and AI"
     return "from commits, file roles and CI only — no AI context"
@@ -236,7 +246,14 @@ def intent(card):
     rec = card.get("_record")
     said, from_body = intent_headline(rec.get("body") if rec else None, card["title"])
     verified = ("first sentence of PR body" if from_body else "PR title") + (" · verified ✓" if rec else " · not verified")
-    purpose = (card.get("context", {}).get("purpose") or "").strip()
+    ctx = card.get("context", {})
+    if (ctx.get("headline") or "").strip():
+        lines = [ctx.get("why") or ""]
+        if ctx.get("before") and ctx.get("after"):
+            lines.append(f"Before: {ctx['before']} → Now: {ctx['after']}")
+        source = ("no visible change" if ctx.get("internal_only") else "what it enables") + " · AI · unverified"
+        return short(ctx["headline"], HEADLINE_MAX), source, "ai", "\n".join(l for l in lines if l)
+    purpose = (ctx.get("purpose") or "").strip()
     if purpose:
         return short(value_first(purpose), HEADLINE_MAX), "what it enables · AI · unverified", "ai", f"PR says: {said}"
     return said, verified, "sprout" if rec else "muted", ""

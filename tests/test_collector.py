@@ -13,10 +13,14 @@ class FakeReviewer:
             raise K.reviewer.ReviewError("boom")
         return {"hotspots": [{"file": "src/util.py", "hunk": "@@ -1,3 +1,3 @@", "why": "w",
                               "severity": "high"}], "risk_note": "r"}
-    def review_context(self, pr, commits, open_titles, merged_titles, model):
+    def review_context(self, pr, commits, open_titles, merged_titles, model, files=(), diff=""):
         self.ctx_calls += 1
+        self.ctx_files = [f.path for f in files]
         return {"purpose": "p", "solution": "s", "notes": "", "recommendation": "approve",
-                "stale": False, "superseded_by": [], "confidence": "high", "reason": "ok"}
+                "stale": False, "superseded_by": [], "confidence": "high", "reason": "ok",
+                "headline": "You can now add numbers.", "why": "Sums were wrong.", "before": "a-b", "after": "a+b",
+                "how": ["The sum is computed with plus"], "manual": [], "internal_only": False, "unsure": "",
+                "facts": [{"before": "x", "after": "y", "evidence": "e"}]}
 
 
 def cfg(tmp_path):
@@ -122,3 +126,12 @@ def test_a_minified_line_is_clipped_not_dropped(tmp_path):
     card = C.load_cards(c.inbox)[0]
     spot = next(h for h in card["hotspots"] if h["source"] == "rule")
     assert len(spot["lines"]) < 20000 and "truncated" in spot["lines"]
+
+
+def test_briefing_fields_reach_the_card_and_the_reviewer_sees_the_files(tmp_path):
+    gh, rv, c = FakeGitHub(), FakeReviewer(), cfg(tmp_path)
+    gh.add_pr("jonathanmoregard/x", 10, "a" * 40)
+    K.collect_once(gh, rv, c)
+    ctx = C.load_cards(c.inbox)[0]["context"]
+    assert ctx["headline"] == "You can now add numbers." and ctx["how"] == ["The sum is computed with plus"]
+    assert "facts" not in ctx and rv.ctx_files == ["src/util.py"]

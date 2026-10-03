@@ -44,10 +44,12 @@ class Reviewer:
     def review_diff(self, diff, files, rule_spots, model):
         return reviewer.review_diff(diff, files, rule_spots, model)
 
-    def review_context(self, pr, commits, open_titles, merged_titles, model):
-        return reviewer.review_context(pr, commits, open_titles, merged_titles, model)
+    def review_context(self, pr, commits, open_titles, merged_titles, model, files=(), diff=""):
+        return reviewer.review_context(pr, commits, open_titles, merged_titles, model, files=files, diff=diff)
 
 
+BRIEFING = ("purpose", "solution", "notes", "headline", "why", "before", "after", "how", "manual",
+            "internal_only", "unsure")
 TOO_LARGE = "diff too large for GitHub's API (over 20000 lines or 300 files): review it in the browser"
 
 
@@ -90,8 +92,9 @@ def build_card(gh, rv, cfg, repo, n, open_prs_files):
             others = [f"{repo}#{p['number']} {p['title']}" for p in gh.list_prs(repo, "open") if p["number"] != n]
             merged = [f"{repo}#{p['number']} {p['title']}" for p in gh.list_prs(repo, "closed")
                       if p.get("merged_at")][:20]
-            ctx = rv.review_context(pr, [c["commit"]["message"] for c in commits], others, merged, cfg.model)
-            context = {k: ctx[k] for k in ("purpose", "solution", "notes")}
+            ctx = rv.review_context(pr, [c["commit"]["message"] for c in commits], others, merged, cfg.model,
+                                    files=files, diff=diff)
+            context = {k: ctx[k] for k in BRIEFING if k in ctx}
             verdict = {k: ctx[k] for k in ("recommendation", "superseded_by", "confidence", "reason")}
             verdict["stale"] = ctx["stale"] or stale_signal
             if d["risk_note"]:

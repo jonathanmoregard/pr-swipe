@@ -343,6 +343,8 @@ class Window(QMainWindow):
         how = QWidget(); hw = QVBoxLayout(how); hw.setContentsMargins(0, 0, 0, 0); hw.setSpacing(6)
         hw.addWidget(row(label("HOW · SOLUTION PATH", role="label"), self.path_source, "stretch"))
         hw.addWidget(self.path_box)
+        self.manual_label = label(name="manualSteps", wrap=True)
+        hw.addWidget(self.manual_label)
         ll.addWidget(how)
         ig.addWidget(left, 0, 0); ig.setColumnStretch(0, 1)
         self.ai_panel, al = frame("aiPanel", spacing=6)
@@ -674,6 +676,9 @@ class Window(QMainWindow):
             src = label(st["src"], name="stepSrc"); src.setProperty("source", st["source"])
             sl.addWidget(top); sl.addWidget(src); sl.addStretch(1)
             self.path_lay.addWidget(step, 1)
+        manual = SU.manual_steps(c)
+        self.manual_label.setText("YOU STILL NEED TO\n" + "\n".join(f"{i}. {m}" for i, m in enumerate(manual, 1)))
+        self.manual_label.setVisible(bool(manual))
         v, ctx = c["verdict"], c["context"]
         has_ai = any((ctx.get(k) or "").strip() for k in ("purpose", "solution")) or c.get("deep_review")
         set_props(self.ai_panel, state="present" if has_ai else "none")
@@ -689,7 +694,10 @@ class Window(QMainWindow):
                                     + (" · STALE" if v["stale"] else "")
                                     + (f" · superseded by {', '.join(v['superseded_by'])}"
                                        if v["superseded_by"] and "superseded" not in v["reason"] else ""))
-        lines = [f"Purpose: {SU.short(ctx['purpose'], 240)}"] if ctx["purpose"] else []
+        # the intent panel already carries the briefing; repeat the purpose only for cards without one
+        lines = [f"Purpose: {SU.short(ctx['purpose'], 240)}"] if ctx["purpose"] and not ctx.get("headline") else []
+        if ctx.get("unsure"):
+            lines.append(SU.short(ctx["unsure"], 240))
         if ctx["notes"]:
             lines.append(SU.short(ctx["notes"], 240))
         if c.get("deep_review"):

@@ -113,3 +113,33 @@ def test_value_first_drops_merge_lead_in():
     assert SU.value_first("With this merged, commands can't touch the cache.") == "Commands can't touch the cache."
     assert SU.value_first("Once merged, x") == "X"
     assert SU.value_first("Lets agents run designs.") == "Lets agents run designs."
+
+
+def briefed():
+    c = make_card(ci={"state": "failure", "failing": ["build"]},
+                  hotspots=[{"source": "rule", "file": "secrets/x.age", "hunk": "", "why": "w", "rule": "secrets"}])
+    c["context"] = {"purpose": "old", "solution": "old", "notes": "",
+                    "headline": "You can now ask agents to build and read Google Forms.",
+                    "why": "Survey work needed a browser by hand.", "before": "Forms tools stay off.",
+                    "after": "Forms tools start with the server.",
+                    "how": ["The server starts with the Forms tools enabled", "Its sign-in secret comes from the vault"],
+                    "manual": ["Create the OAuth client secret"], "internal_only": False, "unsure": ""}
+    c["_record"] = {"body": "The gdocs-review MCP server was spawned from ~/.claude.json as a bare uv run."}
+    return c
+
+
+def test_briefing_drives_the_intent_and_keeps_risks_out_of_the_path():
+    head, src, tone, sub = SU.intent(briefed())
+    assert head == "You can now ask agents to build and read Google Forms." and tone == "ai"
+    assert sub == "Survey work needed a browser by hand.\nBefore: Forms tools stay off. → Now: Forms tools start with the server."
+    assert "PR says" not in sub
+    steps = SU.solution_path(briefed(), [{"sha": "a" * 40, "subject": "fix(mcp): let a caller override X"}])
+    assert [s["text"] for s in steps] == ["The server starts with the Forms tools enabled",
+                                          "Its sign-in secret comes from the vault"]
+    assert all(s["source"] == "ai" for s in steps)
+    assert SU.manual_steps(briefed()) == ["Create the OAuth client secret"]
+
+
+def test_internal_only_briefing_is_labelled_as_such():
+    c = briefed(); c["context"].update(internal_only=True, headline="No visible change: tests stop flaking.")
+    assert SU.intent(c)[1] == "no visible change · AI · unverified"
