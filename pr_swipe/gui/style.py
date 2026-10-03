@@ -71,7 +71,6 @@ QWidget {{ background:#F5F4F0; color:#1E1D1A; font-size:13px; }}
 QFrame#intentPanel, QFrame#filesPanel, QFrame#diffPanel, QFrame#coveragePanel,
 QFrame#rewardsPanel, QFrame#careTile {{ background:#FFFFFF; border:1px solid #E3E0D8; border-radius:6px; }}
 QFrame#aiPanel {{ background:#FCFBF8; border:1px dashed #C9C5BB; border-radius:6px; }}
-QFrame#warningsStrip {{ background:#FDF6F4; border:1px solid #EDC9C3; border-radius:6px; }}
 QFrame#diffHeader {{ background:#FFFFFF; border:none; border-bottom:1px solid #E3E0D8;
   border-top-left-radius:6px; border-top-right-radius:6px; }}
 QFrame#statusStrip {{ background:#EDEBE6; border:none; border-top:1px solid #E3E0D8; }}
@@ -79,7 +78,7 @@ QFrame#vDivider {{ background:#E3E0D8; max-width:1px; min-width:1px; }}
 QFrame#hDivider {{ background:#E3E0D8; max-height:1px; min-height:1px; }}
 QFrame#intentPanel QWidget, QFrame#filesPanel QWidget, QFrame#diffPanel QWidget,
 QFrame#coveragePanel QWidget, QFrame#rewardsPanel QWidget, QFrame#careTile QWidget, QFrame#aiPanel QWidget,
-QFrame#warningsStrip QWidget, QFrame#statusStrip QWidget, QFrame#encounterTile QWidget {{ background:transparent; }}
+QFrame#statusStrip QWidget, QFrame#encounterTile QWidget {{ background:transparent; }}
 QFrame#diffPanel QPlainTextEdit, QFrame#filesPanel QListWidget {{ background:#FFFFFF; }}
 QFrame#intentPanel QFrame#aiPanel {{ background:#FCFBF8; border:1px dashed #C9C5BB; border-radius:6px; }}
 QFrame#intentPanel QFrame#aiPanel[state="none"] {{ background:#F5F4F0; border:1px solid #E3E0D8; }}
@@ -123,14 +122,7 @@ QLabel#stepSrc {{ font-size:11px; color:#8A867C; }}
 QLabel#stepSrc[source="ai"] {{ color:#8A5A00; }}
 QLabel#stepSrc[source="risk"] {{ color:#A93A2F; }}
 QLabel#stepArrow {{ font-size:13px; color:#B8B4AA; }}
-QLabel#manualSteps {{ color:#8A5A00; background:#FBF3E2; border:1px solid #EBD9B0; border-radius:6px; padding:6px 10px; font-weight:600; }}
 QLabel#unverifiedTag[state="none"] {{ color:#8A867C; border:1px solid #D2CEC4; }}
-QLabel#warnCount {{ font-family:"{mono}"; font-size:11px; color:#8A867C; }}
-QLabel#warnCount[risky="true"] {{ color:#A93A2F; }}
-QLabel#warnText {{ font-size:12px; }}
-QLabel#warnText[risky="true"] {{ color:#1E1D1A; }}
-QLabel#warnText[risky="false"] {{ color:#5B5850; }}
-QLabel#warnWhere {{ font-size:11px; color:#8A867C; }}
 
 QLabel#dot {{ min-width:6px; max-width:6px; min-height:6px; max-height:6px; border-radius:1px; background:#D2CEC4; }}
 QLabel#dot[state="done"] {{ background:#8A867C; }}

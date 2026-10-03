@@ -264,7 +264,7 @@ class Window(QMainWindow):
         self.quest_started, self.quest_total, self.session_start, self.noted = False, 0, clock(), set()
         self.quest_complete, self.celebration = False, Q.celebration()
         self.reviews, self.review, self.flavours, self.list_rows = {}, None, {}, []
-        self.rendered_key, self.warn_all = None, False
+        self.rendered_key = None
         self.setWindowTitle("pr-swipe")
         self.setStyleSheet(S.stylesheet())
         self.setFont(S.ui_font())
@@ -319,8 +319,6 @@ class Window(QMainWindow):
         how = QWidget(); hw = QVBoxLayout(how); hw.setContentsMargins(0, 0, 0, 0); hw.setSpacing(6)
         hw.addWidget(row(label("HOW · SOLUTION PATH", role="label"), self.path_source, "stretch"))
         hw.addWidget(self.path_box)
-        self.manual_label = label(name="manualSteps", wrap=True)
-        hw.addWidget(self.manual_label)
         ll.addWidget(how)
         ig.addWidget(left, 0, 0); ig.setColumnStretch(0, 1)
         self.ai_panel, al = frame("aiPanel", spacing=6)
@@ -338,10 +336,6 @@ class Window(QMainWindow):
         ig.addWidget(self.ai_panel, 0, 1, Qt.AlignTop)
         lay.addWidget(self.intent_panel)
 
-        self.warnings, self.warn_grid = frame("warningsStrip", QGridLayout, (12, 7, 12, 7), 2)
-        self.warn_grid.setHorizontalSpacing(10)
-        self.warn_grid.setColumnMinimumWidth(0, 150); self.warn_grid.setColumnStretch(2, 1)
-        lay.addWidget(self.warnings)
 
         files_panel, fl = frame("filesPanel", margins=(0, 6, 0, 6), spacing=0)
         files_panel.setFixedWidth(300)
@@ -550,7 +544,7 @@ class Window(QMainWindow):
         scroll = self.body.verticalScrollBar().value()
         if not same:
             self.shown_at, self.detail_seen, self.one_off = self.clock(), False, False
-            self.rendered_key, self.warn_all = (D.card_key(c) if c is not None else None), False
+            self.rendered_key = D.card_key(c) if c is not None else None
         if c is not None and not self.quest_started:
             return self._start_screen()
         if c is None:
@@ -563,7 +557,6 @@ class Window(QMainWindow):
         self.screens.setCurrentWidget(self.encounter_screen)
         self._encounter_header(c)
         self._pr_block(c)
-        self._warnings(c)
         self._intent(c)
         self._review_on(c)
         self._render_body()
@@ -596,24 +589,10 @@ class Window(QMainWindow):
             parts.append(span(esc(c["mergeable"]), S.TONES["dragon"][0]))
         if sig["overlapping_open"]:
             parts.append("overlaps #" + ", #".join(esc(n) for n in sig["overlapping_open"]))
+        n = SU.warning_total(c)  # the list itself lives behind w: the review screen is for the change
+        if n:
+            parts.append(span(f"⚠ {n} warning{'' if n == 1 else 's'} · w", S.TONES["dragon"][0]))
         self.meta_label.setText(sep.join(parts))
-
-    def _warnings(self, c):
-        rows = SU.warning_rows(c)
-        clear(self.warn_grid)
-        visible = rows if self.warn_all else rows[:3]
-        for i, r in enumerate(visible):
-            if i == 0:
-                self.warn_grid.addWidget(label(f"WARNINGS · {SU.warning_total(c)}", role="label", tone="dragon"),
-                                         0, 0, Qt.AlignTop)
-            count = label(r["count"], name="warnCount"); count.setAlignment(Qt.AlignRight | Qt.AlignTop)
-            count.setFixedWidth(40); set_props(count, risky="true" if r["risky"] else "false")
-            text = label(r["text"], name="warnText", wrap=True); set_props(text, risky="true" if r["risky"] else "false")
-            more = len(rows) - len(visible)
-            where = label(f"+{more} more · w show all" if more and i == len(visible) - 1 else "", name="warnWhere")
-            self.warn_grid.addWidget(count, i, 1); self.warn_grid.addWidget(text, i, 2)
-            self.warn_grid.addWidget(where, i, 3, Qt.AlignTop)
-        self.warnings.setVisible(bool(rows))
 
     def _intent(self, c):
         headline, source, tone, pr_line = SU.intent(c)
@@ -634,9 +613,6 @@ class Window(QMainWindow):
             src = label(st["src"], name="stepSrc"); src.setProperty("source", st["source"])
             sl.addWidget(top); sl.addWidget(src); sl.addStretch(1)
             self.path_lay.addWidget(step, 1)
-        manual = SU.manual_steps(c)
-        self.manual_label.setText("YOU STILL NEED TO\n" + "\n".join(f"{i}. {m}" for i, m in enumerate(manual, 1)))
-        self.manual_label.setVisible(bool(manual))
         v, ctx = c["verdict"], c["context"]
         has_ai = any((ctx.get(k) or "").strip() for k in ("purpose", "solution")) or c.get("deep_review")
         set_props(self.ai_panel, state="present" if has_ai else "none")
@@ -667,8 +643,8 @@ class Window(QMainWindow):
         dlg = QDialog(self); dlg.setWindowTitle("All warnings"); dlg.resize(760, 480)
         lay = QVBoxLayout(dlg)
         lst = QListWidget(); lst.setWordWrap(True)
-        for h in c["hidden_content"]:
-            lst.addItem(f"{SU.KIND_NAME.get(h['kind'], h['kind'])} · {h['where']} · {SU.clean_body(h['text'])[:500]}")
+        for r in SU.warning_rows(c):
+            lst.addItem(f"{r['count']} {r['text']}")
         lay.addWidget(lst)
         dlg.exec()
 
@@ -943,7 +919,7 @@ class Window(QMainWindow):
         if k == Qt.Key_X:
             self.one_off = not self.one_off
             return self._footer()
-        if k == Qt.Key_W and c["hidden_content"]:
+        if k == Qt.Key_W and SU.warning_total(c):
             return self.show_all_warnings(c)
         if k in (Qt.Key_J, Qt.Key_K) and self.review is not None:
             return self._select_row(self.review.row + (1 if k == Qt.Key_J else -1))

@@ -29,7 +29,7 @@ only collapsing is deterministic (low-signal files), and a rule flag always over
 ```
 [encounter strip: 🐉 Dragon · encounter 3/9 — flavour]
 [title (verified) · meta · verified ✓ <sha>]
-[banners: hidden content / returned / unverified]
+[meta line ends with "⚠ N warnings · w" (hidden content / returned / unverified); w lists them]
 Intent (PR body, verified): first lines …        AI (unverified): APPROVE (high) — reason
 ┌ files (ordered) ────────────┬ diff of selected file ───────────────────────────────┐
 │ 🚩 .github/workflows/ci.yml │ ▶ 🚩 rule: ci-workflow                               │

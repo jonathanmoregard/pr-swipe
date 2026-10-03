@@ -168,11 +168,6 @@ def solution_path(card, commits=()):
     return steps[:MAX_STEPS]
 
 
-def manual_steps(card):
-    """What the owner must still do by hand after merging, per the AI briefing."""
-    return [short(m, STEP_MAX) for m in card.get("context", {}).get("manual") or []]
-
-
 def path_source_note(card):
     if card.get("context", {}).get("how"):
         return "what happens, step by step · AI · unverified"

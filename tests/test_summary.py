@@ -128,7 +128,6 @@ def test_briefing_drives_the_intent_and_keeps_risks_out_of_the_path():
     assert [s["text"] for s in steps] == ["The server starts with the Forms tools enabled",
                                           "Its sign-in secret comes from the vault"]
     assert all(s["source"] == "ai" for s in steps)
-    assert SU.manual_steps(briefed()) == ["Create the OAuth client secret"]
 
 
 def test_internal_only_briefing_is_labelled_as_such():
