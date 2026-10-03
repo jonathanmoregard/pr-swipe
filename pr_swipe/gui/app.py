@@ -4,17 +4,47 @@ import time
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
-from PySide6.QtWidgets import (QApplication, QInputDialog, QLabel, QMainWindow, QPlainTextEdit, QVBoxLayout,
-                               QWidget)
+from PySide6.QtGui import QTextCursor
+from PySide6.QtWidgets import (QApplication, QInputDialog, QLabel, QListWidget, QMainWindow, QPlainTextEdit,
+                               QSplitter, QVBoxLayout, QWidget)
 
 from .. import card as C
 from ..config import load
 from . import deck as D
 from . import evidence as EV
 from . import quest as Q
+from . import review as RV
 from .store import ExecutorClient, Store
 
 DWELL_S = 2.0
+FILE_DIFF_MAX = 200_000
+
+
+class ReviewState:
+    """Per-card review view: ordered files from the verified mirror, coverage, selection."""
+
+    def __init__(self, c, clock):
+        rec, view = c["_record"], c["_view"]
+        self.base, self.head, self.view = rec["merge_base"], rec["head_sha"], view
+        self.ordered = RV.order_files(view.files(self.base, self.head), c["hotspots"])
+        pos = {f["path"]: i for i, f in enumerate(self.ordered)}
+        spots = sorted((h for h in c["hotspots"] if h["file"] in pos),
+                       key=lambda h: (pos[h["file"]], h["source"] != "rule"))
+        self.cov = RV.Coverage(list(pos), spots, clock=clock)
+        self.spots, self.low_open, self.row, self.flag_i, self.diffs = spots, False, 0, -1, {}
+
+    def rows(self):
+        normal = [f for f in self.ordered if not f["low_signal"]]
+        low = [f for f in self.ordered if f["low_signal"]]
+        return normal + low if self.low_open or not low else normal + [{"group": len(low)}]
+
+    def file_text(self, f):
+        if f["binary"]:
+            return f"[binary file {f['path']}: not shown]"
+        if f["path"] not in self.diffs:
+            d = self.view.file_diff(self.base, self.head, f["path"])
+            self.diffs[f["path"]] = d[:FILE_DIFF_MAX] + ("\n[file diff truncated]" if len(d) > FILE_DIFF_MAX else "")
+        return RV.annotate(self.diffs[f["path"]], [h for h in self.spots if h["file"] == f["path"]])
 
 
 class DiffHighlighter(QSyntaxHighlighter):
@@ -24,11 +54,15 @@ class DiffHighlighter(QSyntaxHighlighter):
             fmt.setForeground(QColor("#1a7f37"))
         elif text.startswith("-"):
             fmt.setForeground(QColor("#cf222e"))
+        elif text.startswith("▶ 🚩"):
+            fmt.setForeground(QColor("#cf222e")); fmt.setFontWeight(QFont.Bold)
+        elif text.startswith("▶ ⚠"):
+            fmt.setForeground(QColor("#9a6700")); fmt.setFontWeight(QFont.Bold)
         elif text.startswith("@@") or text.startswith("▶"):
             fmt.setForeground(QColor("#8250df"))
         else:
             return
-        self.setFormat(0, len(text), fmt)
+        self.setFormat(0, len(text.encode("utf-16-le")) // 2, fmt)  # Qt counts UTF-16 units, emoji are 2
 
 
 def _plain_label(wrap=True, bold=False):
@@ -61,15 +95,27 @@ class Window(QMainWindow):
         self.body.setFocusPolicy(Qt.NoFocus)  # arrow keys belong to the deck, not the text pane
         self.setFocusPolicy(Qt.StrongFocus)
         self.highlighter = DiffHighlighter(self.body.document())  # keep a reference or Qt drops it
+        self.files = QListWidget()
+        self.files.setFocusPolicy(Qt.NoFocus)
+        self.files.currentRowChanged.connect(self._clicked_row)
+        self.commits_label = _plain_label()
+        side = QWidget(); side_lay = QVBoxLayout(side); side_lay.setContentsMargins(0, 0, 0, 0)
+        side_lay.addWidget(self.files, 3); side_lay.addWidget(self.commits_label, 1)
+        self.side = side
+        split = QSplitter(Qt.Horizontal); split.addWidget(side); split.addWidget(self.body)
+        split.setStretchFactor(1, 3); split.setSizes([320, 780])
+        self.coverage_label = _plain_label()
         self.footer = _plain_label()
+        self.reviews, self.review = {}, None
         lay = QVBoxLayout()
         for w in (self.encounter_label, self.title_label, self.meta_label, self.banner, self.context_label,
-                  self.body, self.footer):
-            lay.addWidget(w)
+                  split, self.coverage_label, self.footer):
+            lay.addWidget(w, 1 if w is split else 0)
         root = QWidget(); root.setLayout(lay); self.setCentralWidget(root)
         self.resize(1100, 850)
         self.reload()
         self.timer = QTimer(self); self.timer.timeout.connect(self.reload); self.timer.start(30000)
+        self.cov_timer = QTimer(self); self.cov_timer.timeout.connect(self._coverage); self.cov_timer.start(500)
 
     # --- data ---
     def reload(self):
@@ -109,6 +155,7 @@ class Window(QMainWindow):
                                    + "\n\nRewards here are for care, not speed: catching what the AI missed, "
                                    "writing lore, overruling with reasons, laying ghosts to rest.")
         self.body.setPlainText("Press any key to begin.")
+        self._review_off()
         self._footer()
 
     def _complete_screen(self):
@@ -124,6 +171,7 @@ class Window(QMainWindow):
             f"⚖️ {plural(r['overrules'], 'overrule')}   👻 {r['laid_to_rest']} laid to rest\n"
             f"({r['approved']} approved, {r['closed']} closed: counted, never scored)")
         self.body.setPlainText("New encounters will appear here when the collector finds them.")
+        self._review_off()
         self._footer()
 
     def _encounter_header(self, c):
@@ -148,6 +196,7 @@ class Window(QMainWindow):
             for w in (self.meta_label, self.context_label):
                 w.setText("")
             self.banner.hide(); self.body.setPlainText("")
+            self._review_off()
             self._footer(); return
         self._encounter_header(c)
         age = c["first_commit_at"][:10]
@@ -169,7 +218,11 @@ class Window(QMainWindow):
         self.banner.setText("\n".join(warn)); self.banner.setVisible(bool(warn))
         v = c["verdict"]
         ctx = c["context"]
-        lines = [f"AI (unverified): {v['recommendation'].upper()} ({v['confidence']})"
+        lines = []
+        if c.get("_record"):
+            intent = [l.strip() for l in (c["_record"].get("body") or "").splitlines() if l.strip()][:3]
+            lines.append("Intent (PR body, verified): " + (" / ".join(intent)[:400] or "(no description)"))
+        lines += [f"AI (unverified): {v['recommendation'].upper()} ({v['confidence']})"
                  + (" · STALE" if v["stale"] else "")
                  + (f" · superseded by {', '.join(v['superseded_by'])}" if v["superseded_by"] else "")
                  + f" — {v['reason']}",
@@ -180,26 +233,116 @@ class Window(QMainWindow):
             lines.append("Deep review: " + c["deep_review"]["summary"])
             lines += [f"  • {f}" for f in c["deep_review"]["findings"]]
         self.context_label.setText("\n".join(lines))
+        self._review_on(c)
         self._render_body()
         self._footer()
 
-    def _render_body(self):
+    # --- review view (verified cards only; others keep the hotspot pane) ---
+    def _review_off(self):
+        self.review = None
+        self.side.hide(); self.coverage_label.setText("")
+
+    def _review_on(self, c):
+        if not c.get("_view"):
+            return self._review_off()
+        key = D.card_key(c)
+        if key not in self.reviews:
+            self.reviews[key] = ReviewState(c, self.clock)
+        self.review = self.reviews[key]
+        self.commits_label.setText("commits:\n" + "\n".join(f"{x['sha'][:7]} {x['subject']}" for x in c.get("_commits", [])))
+        self.side.show()
+        self._fill_files()
+        rows = self.review.rows()
+        if rows and "path" in rows[self.review.row] and self.review.cov.current != rows[self.review.row]["path"]:
+            self.review.cov.showing(rows[self.review.row]["path"])
+        self._coverage()
+
+    def _fill_files(self):
+        r = self.review
+        self.files.blockSignals(True)
+        self.files.clear()
+        for f in r.rows():
+            if "group" in f:
+                self.files.addItem(f"▸ {f['group']} low-signal (vendored/generated)")
+                continue
+            tag = "🚩" if f["rule"] else (f"⚠ {RV.SEV_NAME[f['ai_severity']]}" if f["ai_severity"] else "·")
+            seen = "  ✓" if f["path"] in r.cov.seen else ""
+            self.files.addItem(f"{tag} {f['path']}  +{f['additions']} -{f['deletions']}{seen}")
+        r.row = max(0, min(r.row, self.files.count() - 1))
+        self.files.setCurrentRow(r.row)
+        self.files.blockSignals(False)
+
+    def _clicked_row(self, row):
+        if self.review is not None and row >= 0:
+            self._select_row(row)
+
+    def _select_row(self, row, hunk=None):
+        r = self.review
+        rows = r.rows()
+        if not rows:
+            return
+        row = max(0, min(row, len(rows) - 1))
+        if "group" in rows[row]:
+            r.low_open = True
+            rows = r.rows()
+        r.row = row
+        self.detail_open = False
+        r.cov.showing(rows[row]["path"])
+        self._fill_files()
+        self._render_body(hunk=hunk)
+        self._coverage()
+        self._footer()
+
+    def _next_flag(self):
+        r = self.review
+        if not r.spots:
+            return self._footer("no flagged hunks on this card")
+        r.flag_i = (r.flag_i + 1) % len(r.spots)
+        h = r.spots[r.flag_i]
+        r.cov.visit_hunk(r.flag_i)
+        if any(f["low_signal"] and f["path"] == h["file"] for f in r.ordered):
+            r.low_open = True
+        row = next(i for i, f in enumerate(r.rows()) if f.get("path") == h["file"])
+        self._select_row(row, hunk=h.get("hunk") or "@@")
+
+    def _coverage(self):
+        if self.review is not None:
+            self.coverage_label.setText(self.review.cov.summary())
+
+    def _render_body(self, hunk=None):
         c = self.current()
         if self.detail_open:
             text = c["detail"]["diff"] + ("\n[diff truncated]" if c["detail"]["truncated"] else "")
             text += "".join(f"\n\n▶ comment by {m['author']}:\n{m['body']}" for m in c["detail"]["comments"])
-        else:
+            return self.body.setPlainText(text)
+        if self.review is None:
             parts = []
             for h in c["hotspots"]:
                 tag = f"rule:{h['rule']}" if h["source"] == "rule" else f"AI {h.get('severity')}: {h.get('why', '')}"
                 parts.append(f"▶ {h['file']}  [{tag}]\n{h['hunk']}\n{h['lines']}")
-            text = "\n\n".join(parts) or "No hotspots. ↓ for the full diff."
-        self.body.setPlainText(text)
+            return self.body.setPlainText("\n\n".join(parts) or "No hotspots. ↓ for the full diff.")
+        r = self.review
+        rows = r.rows()
+        if not rows:
+            return self.body.setPlainText("No changed files in the verified diff.")
+        f = rows[r.row]
+        self.body.setPlainText(r.file_text(f))
+        line = 0
+        if hunk:
+            lines = self.body.toPlainText().splitlines()
+            at = next((i for i, l in enumerate(lines) if l.startswith(hunk)), 0)
+            while at > 0 and lines[at - 1].startswith("▶"):
+                at -= 1
+            line = at
+        cur = QTextCursor(self.body.document().findBlockByLineNumber(line))
+        self.body.setTextCursor(cur)
+        self.body.centerCursor() if line else self.body.verticalScrollBar().setValue(0)
 
     def _footer(self, msg=""):
         s = D.stats(self.store.metrics(days=7))
-        keys = ("← close  → approve  ↑ deep AI review  ↓ detail  o browser  s skip  u undo\n"
-                "n note  m AI missed something  x one-off (don't learn)" + ("  [ONE-OFF]" if self.one_off else ""))
+        keys = ("← close  → approve  ↑ deep AI review  ↓ whole diff  o browser  s skip  u undo\n"
+                + ("j/k file  n next flag  " if self.review is not None else "")
+                + "t note  m AI missed something  x one-off (don't learn)" + ("  [ONE-OFF]" if self.one_off else ""))
         ch = Q.chronicle(self.store.rows(), now=self.clock())
         gate = (f"This week: 🔍 {ch['finds']} finds · 📜 {ch['lore']} lore   |   gate: {s['n']} decisions · "
                 f"median approve {s['median_approve_s']:.0f}s · close {s['close_rate']:.0%} · "
@@ -228,7 +371,11 @@ class Window(QMainWindow):
         if k == Qt.Key_X:
             self.one_off = not self.one_off
             return self._footer()
-        if k == Qt.Key_N:
+        if k in (Qt.Key_J, Qt.Key_K) and self.review is not None:
+            return self._select_row(self.review.row + (1 if k == Qt.Key_J else -1))
+        if k == Qt.Key_N and self.review is not None:
+            return self._next_flag()
+        if k == Qt.Key_T:
             return self.note(c, "note")
         if k == Qt.Key_M:
             return self.note(c, "missed")
@@ -248,10 +395,19 @@ class Window(QMainWindow):
             return self._advance(skip=True)
         dwell = self.clock() - self.shown_at
         if D.needs_confirm(c, action):
-            if self.armed != action or (action == "approve" and dwell < DWELL_S):
+            r = self.review
+            gate_ok = (r.cov.gate_ok() if r is not None else dwell >= DWELL_S) if action == "approve" else True
+            if self.armed != action or not gate_ok:
                 self.armed = action
-                why = "🐉 hold your ground: hunks must be on screen 2 s, then press again" if action == "approve" \
-                    else "AI did not suggest closing: press ← again to confirm"
+                if action == "close":
+                    why = "AI did not suggest closing: press ← again to confirm"
+                elif r is None:
+                    why = "🐉 hold your ground: hunks must be on screen 2 s, then press again"
+                elif not gate_ok:
+                    left = sorted({p for p, _ in r.cov.remaining()})
+                    why = f"🐉 hold your ground: {len(r.cov.remaining())} flagged hunk(s) unvisited in {', '.join(left)}; n visits them"
+                else:
+                    why = "🐉 every flagged hunk seen: press → again to approve"
                 return self._footer(why)
         self.flush_pending()
         decision = {"action": action, "repo": c["repo"], "number": c["number"], "head_sha": c["head_sha"],

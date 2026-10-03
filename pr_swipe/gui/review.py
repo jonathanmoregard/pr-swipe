@@ -8,6 +8,7 @@ import re
 import time
 
 SEV = {"high": 3, "medium": 2, "low": 1}
+SEV_NAME = {v: k for k, v in SEV.items()}
 LOW_SIGNAL = re.compile(
     r"(^|/)(vendor|third_party|node_modules|dist)/"
     r"|\.min\.(js|css)$|\.map$|_pb2(_grpc)?\.py$|\.pb\.go$|(^|/)__snapshots__/|\.snap$")
@@ -47,7 +48,7 @@ class Coverage:
         self.paths, self.clock = list(paths), clock
         self.flagged = [(h["file"], h.get("hunk", "")) for h in hotspots if h["file"] in set(self.paths)]
         self.seen, self.visited = set(), set()
-        self._current, self._since = None, None
+        self.current, self._since = None, None
 
     def see_file(self, path):
         self.seen.add(path)
@@ -59,11 +60,11 @@ class Coverage:
     def showing(self, path):
         """Call when the selected file changes; a file shown for SEEN_AFTER_S counts as seen."""
         self.tick()
-        self._current, self._since = path, self.clock()
+        self.current, self._since = path, self.clock()
 
     def tick(self):
-        if self._current is not None and self.clock() - self._since >= SEEN_AFTER_S:
-            self.see_file(self._current)
+        if self.current is not None and self.clock() - self._since >= SEEN_AFTER_S:
+            self.see_file(self.current)
 
     def gate_ok(self) -> bool:
         self.tick()
