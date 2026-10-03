@@ -12,6 +12,7 @@ dependencies = ["PySide6", "jsonschema", "PyJWT", "cryptography"]
 pr-swipe-collector = "pr_swipe.collector:main"
 pr-swipe-executor = "pr_swipe.executor:main"
 pr-swipe-gui = "pr_swipe.gui.app:main"
+pr-swipe-apply-rulesets = "pr_swipe.rulesets:main"
 
 [tool.setuptools.packages.find]
 include = ["pr_swipe*"]
