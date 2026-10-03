@@ -143,3 +143,7 @@ def test_briefing_drives_the_intent_and_keeps_risks_out_of_the_path():
 def test_internal_only_briefing_is_labelled_as_such():
     c = briefed(); c["context"].update(internal_only=True, headline="No visible change: tests stop flaking.")
     assert SU.intent(c)[1] == "no visible change · AI · unverified"
+
+
+def test_description_preview_skips_headings():
+    assert SU.desc_preview("## Why\n\nForms tools never worked.\n\n## How\nx") == "Forms tools never worked."

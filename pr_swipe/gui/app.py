@@ -45,9 +45,17 @@ class ReviewState:
     def __init__(self, c, clock):
         rec, view = c["_record"], c["_view"]
         self.base, self.head, self.view = rec["merge_base"], rec["head_sha"], view
-        self.ordered = RV.order_files(view.files(self.base, self.head), c["hotspots"])
+        ordered = RV.order_files(view.files(self.base, self.head), c["hotspots"])
+        secret = [f for f in ordered if RV.is_secret(f["path"])]
+        self.raw_spots = c["hotspots"]
+        hotspots = c["hotspots"]
+        if secret:  # encrypted files review as one row; their flags move onto it
+            grp = RV.secrets_row(secret)
+            ordered = sorted([f for f in ordered if not RV.is_secret(f["path"])] + [grp], key=RV.file_sort_key)
+            hotspots = [dict(h, file=grp["path"], hunk="") if RV.is_secret(h["file"]) else h for h in hotspots]
+        self.ordered = ordered
         pos = {f["path"]: i for i, f in enumerate(self.ordered)}
-        spots = sorted((h for h in c["hotspots"] if h["file"] in pos),
+        spots = sorted((h for h in hotspots if h["file"] in pos),
                        key=lambda h: (pos[h["file"]], h["source"] != "rule"))
         self.cov = RV.Coverage(list(pos), spots, clock=clock)
         self.spots, self.low_open, self.row, self.flag_i, self.diffs = spots, False, 0, -1, {}
@@ -58,6 +66,9 @@ class ReviewState:
         return normal + low if self.low_open or not low else normal + [{"group": len(low)}]
 
     def file_lines(self, f):
+        if "secrets" in f:
+            return RV.secret_lines([(p, self.view.blob(self.base, p), self.view.blob(self.head, p)) for p in f["secrets"]],
+                                   self.raw_spots)
         if f["path"] not in self.diffs:
             d = self.view.file_diff(self.base, self.head, f["path"])
             self.diffs[f["path"]] = d[:FILE_DIFF_MAX] + ("\n[file diff truncated]" if len(d) > FILE_DIFF_MAX else "")
@@ -916,8 +927,10 @@ class Window(QMainWindow):
         rows = r.rows()
         if r.row < len(rows) and "path" in rows[r.row] and not self.detail_open:
             spots = r.file_spots(rows[r.row]["path"])
+            seen = sum(i in cov.visited for i, _ in spots)
             self.hunk_state.setText(" · ".join(f"hunk {n} {'✓' if i in cov.visited else 'unvisited'}"
-                                               for n, (i, _) in enumerate(spots, 1)))
+                                               for n, (i, _) in enumerate(spots, 1)) if len(spots) <= 4
+                                    else f"{seen}/{len(spots)} flags seen" + (" ✓" if seen == len(spots) else ""))
         self._keys()
 
     def _keys(self):

@@ -36,11 +36,13 @@ def clean_body(body):
 
 
 def desc_preview(body, lines=4):
-    """Collapsed description: the first paragraph, at most `lines` lines, stopping before a table or
-    code fence so the preview never ends mid-row."""
+    """Collapsed description: the first paragraph of prose, at most `lines` lines, stopping before a
+    table or code fence so the preview never ends mid-row. Headings are skipped: "## Why" says nothing."""
     out = []
-    for line in clean_body(body).lstrip("\n").splitlines():
-        if not line.strip() or line.lstrip().startswith(("|", "```", "~~~")) or len(out) == lines:
+    for line in clean_body(body).splitlines():
+        if not out and (not line.strip() or line.lstrip().startswith("#")):
+            continue
+        if not line.strip() or line.lstrip().startswith(("|", "```", "~~~", "#")) or len(out) == lines:
             break
         out.append(line)
     text = "\n".join(out).strip()
