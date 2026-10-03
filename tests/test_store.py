@@ -56,3 +56,16 @@ def test_executor_client_round_trip(tmp_path):
 def test_executor_client_reports_unreachable(tmp_path):
     r = ExecutorClient(tmp_path / "missing.sock").send({"action": "close"})
     assert r["ok"] is False and "executor" in r["error"]
+
+
+def test_metrics_exclude_undone_decisions(tmp_path):
+    t = {"now": 1.0}
+    s = Store(cfg(tmp_path), clock=lambda: t["now"])
+    a, b = make_card(number=1), make_card(number=2)
+    s.mark_decided(a, "approve", dwell=2.0, detail=False)
+    s.mark_decided(b, "close", dwell=2.0, detail=False)
+    t["now"] = 2.0
+    s.undo(a)  # undone by the human, or refused by the executor
+    t["now"] = 3.0
+    s.mark_decided(a, "close", dwell=4.0, detail=True)
+    assert [(r["key"].split("@")[0], r["action"]) for r in s.metrics()] == [("o/r#2", "close"), ("o/r#1", "close")]

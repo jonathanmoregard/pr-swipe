@@ -47,7 +47,15 @@ class Store:
             return []
         cutoff = self.clock() - days * 86400
         rows = [json.loads(l) for l in self.metrics_file.read_text().splitlines() if l.strip()]
-        return [r for r in rows if r["ts"] >= cutoff and r["action"] in ("approve", "close")]
+        kept, latest = [], {}
+        for r in rows:  # an undo row (human undo or executor refusal) cancels that key's latest decision
+            if r["action"] == "undo":
+                if r["key"] in latest:
+                    kept[latest.pop(r["key"])] = None
+            elif r["action"] in ("approve", "close"):
+                latest[r["key"]] = len(kept)
+                kept.append(r)
+        return [r for r in kept if r is not None and r["ts"] >= cutoff]
 
     def _request(self, obj):
         write_json_atomic(self.cfg.outbox, f"{uuid.uuid4().hex}.json", obj, mode=0o660)
