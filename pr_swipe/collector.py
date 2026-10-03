@@ -175,6 +175,22 @@ def process_outbox(cfg, gh, reviewer, opener=None, deep=None):
             p.unlink(missing_ok=True)
 
 
+def tick(last, now, interval, gh, rv, cfg):
+    """One loop pass. A failed pass (network blip, GitHub 5xx) is logged and retried next interval;
+    the outbox is still served, so the deck's requests do not stall behind a broken collection."""
+    if now - last >= interval:
+        try:
+            collect_once(gh, rv, cfg)
+        except Exception:
+            log.exception("collection pass failed; retrying next interval")
+        last = now
+    try:
+        process_outbox(cfg, gh, rv)
+    except Exception:
+        log.exception("outbox pass failed")
+    return last
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="pr-swipe-collector")
     ap.add_argument("--once", action="store_true")
@@ -189,10 +205,7 @@ def main(argv=None):
         return
     last = 0.0
     while True:
-        if time.time() - last >= a.interval:
-            collect_once(gh, rv, cfg)
-            last = time.time()
-        process_outbox(cfg, gh, rv)
+        last = tick(last, time.time(), a.interval, gh, rv, cfg)
         time.sleep(5)
 
 

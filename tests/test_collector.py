@@ -86,3 +86,13 @@ def test_outbox_open_request_only_opens_github_urls(tmp_path):
     K.process_outbox(c, gh=None, reviewer=None, opener=opened.append, deep=lambda *a: None)
     assert opened == ["https://github.com/o/r/pull/1"]
     assert list(c.outbox.glob("*.json")) == []
+
+
+def test_a_network_blip_does_not_kill_the_loop(tmp_path, monkeypatch):
+    import urllib.error
+    calls = []
+    def boom(*a): calls.append("collect"); raise urllib.error.URLError("offline")
+    monkeypatch.setattr(K, "collect_once", boom)
+    monkeypatch.setattr(K, "process_outbox", lambda *a: calls.append("outbox"))
+    last = K.tick(last=0.0, now=1000.0, interval=600, gh=None, rv=None, cfg=None)
+    assert calls == ["collect", "outbox"] and last == 1000.0   # outbox still served; retry next interval

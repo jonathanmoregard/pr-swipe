@@ -55,3 +55,24 @@ def test_socket_is_owner_only_and_round_trips(tmp_path):
     assert json.loads(s.makefile().readline())["ok"]
     s.sendall(b"not json\n")
     assert not json.loads(s.makefile().readline())["ok"]
+
+
+def test_busy_executor_refuses_instead_of_acting_after_the_client_gave_up(tmp_path, monkeypatch):
+    import pr_swipe.executor as E
+    monkeypatch.setattr(E, "LOCK_WAIT", 0.2, raising=False)
+    gh, ex = setup(tmp_path); gh.add_pr(R, 1, "a" * 40)
+    ex.lock.acquire()                      # a long train step holds the lock
+    res = {}
+    t = threading.Thread(target=lambda: res.update(r=ex.handle(d("approve", 1, "a" * 40))))
+    t.start(); t.join(1.0)
+    blocked = t.is_alive()
+    ex.lock.release(); t.join(2.0)
+    assert not blocked, "handler must answer before the GUI's socket timeout, not block on the lock"
+    assert res["r"]["ok"] is False and "busy" in res["r"]["error"]
+    assert ex.train.queued() == set()      # refused means nothing was enqueued
+
+
+def test_client_waits_longer_than_the_executor_can_take():
+    import pr_swipe.executor as E
+    from pr_swipe.gui.store import CLIENT_TIMEOUT
+    assert CLIENT_TIMEOUT > E.LOCK_WAIT + E.MAX_HANDLE_S

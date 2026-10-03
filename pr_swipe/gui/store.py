@@ -10,6 +10,7 @@ from ..card import write_json_atomic
 from .deck import card_key
 
 RETURN_TTL = 7 * 86400
+CLIENT_TIMEOUT = 240.0  # > executor.LOCK_WAIT + executor.MAX_HANDLE_S, so "refused" is never a guess
 NOTE_MAX = 4000
 
 
@@ -118,7 +119,7 @@ class ExecutorClient:
     def send(self, decision) -> dict:
         try:
             with socket.socket(socket.AF_UNIX) as s:
-                s.settimeout(30)
+                s.settimeout(CLIENT_TIMEOUT)
                 s.connect(str(self.path))
                 f = s.makefile("rw")
                 f.write(json.dumps(decision) + "\n")

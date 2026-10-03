@@ -18,6 +18,12 @@ from .train import Train
 
 log = logging.getLogger("pr-swipe.executor")
 CLOSE_NOTE = "Closed via pr-swipe (human decision)."
+# A decision waits at most LOCK_WAIT for a running train step, then is refused as busy.
+# Once it holds the lock it makes at most 6 GitHub calls (installation lookup + token,
+# PR read, close, comment), each bounded by the client's 30 s HTTP timeout. The GUI's
+# socket timeout must exceed both, or a decision the GUI shows as refused could still act.
+LOCK_WAIT = 20.0
+MAX_HANDLE_S = 6 * 30.0
 
 
 class Executor:
@@ -30,7 +36,9 @@ class Executor:
             decisions.validate(d)
         except decisions.DecisionError as e:
             return {"ok": False, "error": str(e)}
-        with self.lock:
+        if not self.lock.acquire(timeout=LOCK_WAIT):
+            return {"ok": False, "error": "executor busy (merge train step running), try again"}
+        try:
             self.audit.append("decision", **{k: d[k] for k in ("action", "repo", "number", "head_sha", "card_sha256")})
             try:
                 if not self.installed(d["repo"]):
@@ -41,6 +49,8 @@ class Executor:
             except GitHubError as e:
                 self.audit.append("error", repo=d["repo"], number=d["number"], status=e.status)
                 return {"ok": False, "error": f"GitHub {e.status}"}
+        finally:
+            self.lock.release()
 
     def _close(self, d):
         pr = self.gh.pr(d["repo"], d["number"])
