@@ -93,3 +93,16 @@ def test_network_failure_is_answered_not_dropped(tmp_path):
     gh, ex = setup(tmp_path, installed=offline)
     r = ex.handle(d("approve", 1, "a" * 40))
     assert r["ok"] is False and "network" in r["error"] and ex.train.queued() == set()
+
+
+def test_tick_runs_autobump_and_its_enqueue_holds_the_decision_lock(tmp_path):
+    gh, _ = setup(tmp_path)
+    seen = []
+    class Probe:
+        lock = None
+        def step(self): seen.append(self.lock is ex.lock and not ex.lock.locked())
+    audit = AuditLog(tmp_path / "audit2.jsonl")
+    ex = Executor(gh, audit, Train(gh, audit, tmp_path / "t2.json", tmp_path / "returns"),
+                  lambda r: True, lambda r, n, h: True, autobump=Probe())
+    ex.tick()
+    assert seen == [True]

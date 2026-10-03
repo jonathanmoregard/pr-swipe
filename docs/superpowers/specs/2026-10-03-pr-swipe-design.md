@@ -52,7 +52,12 @@ AI review runs only on PRs authored by the user or the user's agents (same GitHu
 identity, or the agent-push App once §7 lands). Third-party PRs show deterministic
 analysis only, labelled "no AI review: external author".
 
-Out of scope: auto-merge without a human swipe; GitHub web UI as merge path (break-glass
+Auto-merge without a human swipe applies to one class only (owner decision, 2026-10-03): Dependabot
+version bumps in repos with CI. The executor checks it from GitHub data alone: every commit by
+dependabot[bot] and GitHub-signed, the diff only dependency files or workflow `uses:` lines, CI with at
+least one check all green; then the ordinary merge train runs. See `pr_swipe/autobump.py`.
+
+Out of scope: any other auto-merge without a human swipe; GitHub web UI as merge path (break-glass
 only, by temporarily editing a ruleset); Wayland migration; running agents as separate
 Unix users.
 

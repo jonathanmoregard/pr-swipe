@@ -38,7 +38,7 @@ SCHEMA = {
         "title": _SL(1000), "created_at": _S, "first_commit_at": _S, "updated_at": _S,
         "can_merge": {"type": "boolean"},
         "ci": {"type": "object", "additionalProperties": False, "required": ["state", "failing"],
-               "properties": {"state": {"enum": ["success", "failure", "pending", "none"]},
+               "properties": {"state": {"enum": ["success", "failure", "pending", "none", "unknown"]},
                               "failing": {"type": "array", "items": _SL(300)}}},
         "mergeable": {"enum": ["clean", "behind", "dirty", "unknown"]},
         "diffstat": {"type": "object", "additionalProperties": False,

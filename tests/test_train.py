@@ -105,3 +105,14 @@ def test_prs_in_one_repo_merge_in_order_and_state_survives_restart(tmp_path):
     run(t2, clock)
     merges = [c[2] for c in gh.calls if c[0] == "merge"]
     assert merges == [1, 2]
+
+
+def test_unreadable_ci_returns_instead_of_merging(tmp_path):
+    gh = FakeGitHub(); gh.add_pr(R, 1, "a" * 40)
+    gh.ci[(R, "a" * 40)] = {"state": "unknown", "failing": []}
+    t, clock = make(tmp_path, gh)
+    t.enqueue(decision(1, "a" * 40))
+    clock.t += 200
+    t.step()
+    assert not any(c[0] == "merge" for c in gh.calls)
+    assert "can't read CI" in returns(tmp_path)[0]["reason"]

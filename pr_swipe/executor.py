@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from . import decisions
+from .autobump import AutoBump
 from .audit import AuditLog
 from .config import load
 from .github import AppTokens, GitHub, GitHubError
@@ -28,12 +29,14 @@ MAX_HANDLE_S = 6 * 30.0
 
 
 class Executor:
-    def __init__(self, gh, audit, train, installed, verified, verifier=None):
+    def __init__(self, gh, audit, train, installed, verified, verifier=None, autobump=None):
         """`verified(repo, number, head_sha)` must be true before any decision acts: the human saw
         evidence fetched by the verifier for exactly that head, not a card the user's uid wrote."""
         self.gh, self.audit, self.train, self.installed = gh, audit, train, installed
-        self.verified, self.verifier = verified, verifier
+        self.verified, self.verifier, self.autobump = verified, verifier, autobump
         self.lock = threading.Lock()
+        if autobump is not None:
+            autobump.lock = self.lock
 
     def handle(self, d) -> dict:
         try:
@@ -75,6 +78,8 @@ class Executor:
     def tick(self):
         if self.verifier is not None:  # network-bound; never under the decision lock
             self.verifier.step()
+        if self.autobump is not None:  # checks are network-bound; it takes the lock only to enqueue
+            self.autobump.step()
         with self.lock:
             self.train.step()
 
@@ -127,7 +132,8 @@ def main():
     train = Train(gh, audit, cfg.state / "train.json", cfg.returns)
     verifier = Verifier(gh, tokens, git_root=cfg.git, verified_dir=cfg.verified, inbox=cfg.inbox)
     verified = lambda repo, n, head: is_verified(cfg.verified, repo, n, head)  # noqa: E731
-    serve(Executor(gh, audit, train, tokens.installed, verified, verifier), cfg.socket)
+    autobump = AutoBump(gh, audit, train, tokens.installed, verifier.targets, cfg.state / "autobump.json")
+    serve(Executor(gh, audit, train, tokens.installed, verified, verifier, autobump), cfg.socket)
 
 
 if __name__ == "__main__":

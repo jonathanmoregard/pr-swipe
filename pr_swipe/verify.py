@@ -55,7 +55,7 @@ class Verifier:
         self.git_root, self.verified_dir, self.inbox = Path(git_root), Path(verified_dir), Path(inbox)
         self.fetch_url = fetch_url
 
-    def _targets(self):
+    def targets(self):
         seen = set()
         for p in sorted(self.inbox.glob("*.json")):
             try:
@@ -68,7 +68,7 @@ class Verifier:
                 yield repo, n
 
     def step(self):
-        for repo, n in self._targets():
+        for repo, n in self.targets():
             try:
                 self._verify(repo, n)
             except (GitHubError, subprocess.SubprocessError, OSError, ValueError) as e:

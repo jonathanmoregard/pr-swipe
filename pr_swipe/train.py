@@ -118,6 +118,9 @@ class Train:
             else:
                 self._save()
             return
+        if ci["state"] == "unknown":
+            self._return(it, "can't read CI checks (token lacks Checks: read)", head)
+            return
         if ci["state"] == "failure":
             self._return(it, "CI failed: " + ", ".join(ci["failing"]), head)
             return

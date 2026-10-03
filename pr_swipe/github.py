@@ -124,8 +124,10 @@ class AppTokens:
 
 
 def summarize_ci(runs, statuses) -> dict:
+    """runs=None means the token may not read check runs: then a clean answer is "unknown", never
+    "none" or "success", because the checks we can't see may be failing."""
     failing, pending, seen = [], False, False
-    for r in runs:
+    for r in runs or []:
         seen = True
         if r["status"] != "completed":
             pending = True
@@ -139,6 +141,8 @@ def summarize_ci(runs, statuses) -> dict:
             failing.append(s["context"])
     if failing:
         return {"state": "failure", "failing": sorted(set(failing))}
+    if runs is None:
+        return {"state": "unknown", "failing": []}
     if pending:
         return {"state": "pending", "failing": []}
     return {"state": "success" if seen else "none", "failing": []}
@@ -200,7 +204,9 @@ class GitHub:
         try:
             runs = self._req("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100", repo=repo)[1]["check_runs"]
         except GitHubError as e:
-            if e.status not in (403, 404):
+            if e.status == 403:  # token lacks Checks: read
+                runs = None
+            elif e.status != 404:
                 raise
         statuses = self._req("GET", f"/repos/{repo}/commits/{sha}/status", repo=repo)[1].get("statuses", [])
         return summarize_ci(runs, statuses)

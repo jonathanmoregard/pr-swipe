@@ -16,6 +16,7 @@ class FakeGitHub:
         self.merge_status = {}  # (repo, n) -> forced status
         self.on_update = None   # callable(repo, n) -> new head sha
         self.repos = {}
+        self.commits = {}      # (repo, n) -> list, else one plain commit
 
     def add_pr(self, repo, n, sha, author="jonathanmoregard", diff=PLAIN, mergeable_state="clean",
                title="Fix", body="", base_sha="b" * 40):
@@ -46,7 +47,8 @@ class FakeGitHub:
         return d
 
     def pr_commits(self, repo, n):
-        return [{"commit": {"message": "commit msg", "author": {"date": "2026-09-30T00:00:00Z"}}}]
+        return self.commits.get((repo, n)) or [
+            {"commit": {"message": "commit msg", "author": {"date": "2026-09-30T00:00:00Z"}}}]
 
     def issue_comments(self, repo, n):
         return []

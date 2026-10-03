@@ -61,8 +61,12 @@ def test_errors_raise_with_status():
      [{"context": "b", "state": "pending"}], "failure"),
     ([], [{"context": "b", "state": "error"}], "failure"),
     ([{"name": "a", "status": "completed", "conclusion": "skipped"}], [], "success"),
+    (None, [], "unknown"),
+    (None, [{"context": "b", "state": "success"}], "unknown"),
+    (None, [{"context": "b", "state": "failure"}], "failure"),
 ])
 def test_ci_summary(runs, statuses, expected):
+    """runs=None: the token could not read check runs, so no answer may claim there is no CI."""
     assert G.summarize_ci(runs, statuses)["state"] == expected
 
 
