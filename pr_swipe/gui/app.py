@@ -9,7 +9,7 @@ import sys
 import textwrap
 import time
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
                            QTextDocument, QTextFormat, QTextFrameFormat, QTextLength, QTextTable)
 from PySide6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
@@ -384,6 +384,7 @@ class Window(QMainWindow):
         dhl.addWidget(self.diff_path); dhl.addWidget(self.diff_info); dhl.addStretch(1); dhl.addWidget(self.hunk_state)
         dl.addWidget(dh)
         self.body = DiffView()
+        self.body.verticalScrollBar().valueChanged.connect(lambda _: self._mark_on_screen())
         dl.addWidget(self.body, 1)
 
         self.right_col = QWidget(); self.right_col.setFixedWidth(420)
@@ -838,11 +839,42 @@ class Window(QMainWindow):
         self._render_body(hunk=hunk)
         self._footer()
 
+    def _spot_lines(self):
+        """Flagged-hunk index -> line in the diff pane, for the file on screen. A file-level flag sits
+        on the first hunk; a file with no hunk lines (binary view) carries its flags at the top."""
+        r = self.review
+        rows = r.rows() if r is not None and not self.detail_open else []
+        if not rows or "path" not in rows[r.row]:
+            return {}
+        out = {}
+        for i, h in r.file_spots(rows[r.row]["path"]):
+            head = h.get("hunk") or "@@"
+            out[i] = next((n for n, (k, t) in enumerate(self.body.lines) if k == "hunk" and t.startswith(head)), 0)
+        return out
+
+    def _on_screen(self):
+        first = self.body.firstVisibleBlock().blockNumber()
+        last = self.body.cursorForPosition(QPoint(0, self.body.viewport().height() - 1)).blockNumber()
+        return {i for i, n in self._spot_lines().items() if first <= n <= last}
+
+    def _mark_on_screen(self):
+        """A flagged hunk whose header has been on screen counts as visited."""
+        new = self._on_screen() - self.review.cov.visited if self.review is not None else set()
+        if new:
+            self.review.cov.visited |= new
+            self._coverage()
+
     def _next_flag(self):
+        """Jump to the next flagged hunk that is not on screen, unvisited ones first, so every press moves."""
         r = self.review
         if not r.spots:
             return self._footer("no flagged hunks on this card")
-        r.flag_i = (r.flag_i + 1) % len(r.spots)
+        here = self._on_screen()
+        order = [(r.flag_i + k) % len(r.spots) for k in range(1, len(r.spots) + 1)]
+        away = [i for i in order if i not in here]
+        if not away:
+            return self._footer("every flagged hunk on this card is on screen")
+        r.flag_i = next((i for i in away if i not in r.cov.visited), away[0])
         h = r.spots[r.flag_i]
         r.cov.visit_hunk(r.flag_i)
         if any(f["low_signal"] and f["path"] == h["file"] for f in r.ordered):
@@ -936,6 +968,7 @@ class Window(QMainWindow):
         if hunk:
             focus = next((i for i, (k, t) in enumerate(lines) if k == "hunk" and t.startswith(hunk)), None)
         self.body.show_lines(lines, focus=focus, path=f["path"])
+        self._mark_on_screen()
         self._coverage()
 
     def _footer(self, msg=""):

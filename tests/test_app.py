@@ -209,8 +209,7 @@ def test_dragon_approve_waits_for_every_flagged_hunk(qtbot):
     qtbot.keyClick(w, Qt.Key_Right); qtbot.keyClick(w, Qt.Key_Right)
     w.flush_pending()
     assert client.sent == [] and "1 flagged hunk unvisited in train.py" in w.footer.text()
-    qtbot.keyClick(w, Qt.Key_N)
-    qtbot.keyClick(w, Qt.Key_N)
+    qtbot.keyClick(w, Qt.Key_N)               # the ci.yml hunk is already on screen: one press reaches train.py
     assert "⚠ AI high · unverified — retries without re-checking head" in w.body.toPlainText()
     assert w.hunks_count.text() == "2/2" and w.gate_label.text() == "✓ Approve unlocked"
     qtbot.keyClick(w, Qt.Key_Right)
@@ -233,3 +232,32 @@ def test_long_flag_callout_wraps_and_focus_follows(qtbot):
     kinds = [k for k, _ in v.lines]
     assert kinds.count("ai") > 1 and kinds[-1] == "add"
     assert v.textCursor().blockNumber() == len(v.lines) - 1
+
+
+def long_card():
+    """One file, two flags on its first hunk and one flag on a hunk far below."""
+    far = "@@ -1,2 +1,2 @@\n-a\n+b\n" + "".join(f" line{i}\n" for i in range(300)) + "@@ -400 +400 @@\n-c\n+d"
+    class View(FakeView):
+        DIFFS = {"src/long.py": far, "src/other.py": "@@ -1 +1 @@\n-x\n+y"}
+    spots = [{"source": "rule", "rule": "large-deletion", "file": "src/long.py", "hunk": "@@ -1,2 +1,2 @@", "lines": "+b"},
+             {"source": "ai", "file": "src/long.py", "hunk": "@@ -1,2 +1,2 @@", "lines": "+b", "why": "w1", "severity": "high"},
+             {"source": "ai", "file": "src/long.py", "hunk": "@@ -400 +400 @@", "lines": "+d", "why": "w2", "severity": "high"},
+             {"source": "ai", "file": "src/other.py", "hunk": "@@ -1 +1 @@", "lines": "+y", "why": "w3", "severity": "low"}]
+    c = review_card()
+    c.update(hotspots=spots, _view=View())
+    return c
+
+
+def test_hunks_on_screen_count_as_visited_and_n_always_moves(qtbot):
+    w, *_ = make(qtbot, [long_card()])
+    w.resize(1440, 900); w.show(); qtbot.waitExposed(w)
+    w._select_row(w.review.row)               # re-render at the real size
+    assert w.hunks_count.text() == "2/4"      # both flags on the first hunk were on screen
+    qtbot.keyClick(w, Qt.Key_N)               # skips what is already on screen: the far hunk
+    assert w.body.textCursor().block().text().startswith("@@ -400")
+    assert w.hunks_count.text() == "3/4"
+    qtbot.keyClick(w, Qt.Key_N)
+    assert w.diff_path.text() == "src/other.py" and w.hunks_count.text() == "4/4"
+    before = (w.diff_path.text(), w.body.verticalScrollBar().value())
+    qtbot.keyClick(w, Qt.Key_N)               # all visited: still goes somewhere else
+    assert (w.diff_path.text(), w.body.verticalScrollBar().value()) != before
