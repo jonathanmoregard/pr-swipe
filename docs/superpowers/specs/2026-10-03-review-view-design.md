@@ -36,8 +36,6 @@ Intent (PR body, verified): first lines …        AI (unverified): APPROVE (hig
 │ ⚠ high  src/train.py   ✓   │ ▶ ⚠ AI high: retries merge without re-checking head  │
 │ ·       src/util.py         │ @@ -10,3 +10,4 @@                                    │
 │ ▸ 2 low-signal (lockfiles)  │ + ...                                                │
-├ commits ────────────────────┤                                                      │
-│ a1b2c3d feat: retry on 409  │                                                      │
 └─────────────────────────────┴──────────────────────────────────────────────────────┘
 seen: 2/4 files · flagged hunks 1/3     j/k file  n next flag  ← close → approve …
 ```
@@ -53,7 +51,7 @@ seen: 2/4 files · flagged hunks 1/3     j/k file  n next flag  ← close → ap
   `n` has landed on it (or its file was seen). Footer shows `seen x/y files · flagged hunks a/b`.
 - **Approve gate:** on cards that need confirmation (dragons), approve requires every flagged hunk
   to have been visited, instead of the 2 s dwell. The footer says which remain. Close is unchanged.
-- **Keys:** `j`/`k` next/previous file, `n` next flagged hunk (across files), `↓` toggles the whole
+- **Keys:** `j`/`k` next/previous file, `n` next flagged hunk (across files), `f` toggles the whole
   diff (all files, in display order). Swipes and `s o u n m x` are unchanged. The `n` key moves
   from "note" to "next flag"; note becomes `t` (tell).
 
@@ -62,7 +60,7 @@ seen: 2/4 files · flagged hunks 1/3     j/k file  n next flag  ← close → ap
 - `gui/review.py` (pure): `low_signal(path)`, `order_files(files, hotspots)`, `Coverage` (seen files,
   visited hunks, `gate_ok()`, `summary()`), `annotate(file_diff_text, hotspots_for_file)` → text with
   callout lines.
-- `gui/app.py`: file list (QListWidget, no focus), commits label, diff pane, coverage footer, keys.
+- `gui/app.py`: file list (QListWidget, no focus), diff pane, coverage footer, keys.
 
 ## Testing
 

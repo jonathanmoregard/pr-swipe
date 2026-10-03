@@ -35,20 +35,6 @@ def clean_body(body):
     return text
 
 
-def desc_preview(body, lines=4):
-    """Collapsed description: the first paragraph of prose, at most `lines` lines, stopping before a
-    table or code fence so the preview never ends mid-row. Headings are skipped: "## Why" says nothing."""
-    out = []
-    for line in clean_body(body).splitlines():
-        if not out and (not line.strip() or line.lstrip().startswith("#")):
-            continue
-        if not line.strip() or line.lstrip().startswith(("|", "```", "~~~", "#")) or len(out) == lines:
-            break
-        out.append(line)
-    text = "\n".join(out).strip()
-    return text or "_(starts with a table or code block · d expands)_"
-
-
 def short(text, limit=STEP_MAX):
     """First sentence, whitespace collapsed, capped."""
     text = re.sub(r"\s+", " ", text or "").strip()
@@ -66,10 +52,6 @@ def step_text(text):
     t = _PAREN.sub("", _CC_PREFIX.sub("", re.sub(r"\s+", " ", text or "").strip()))
     t = short(t, STEP_SHORT)
     return t[:1].upper() + t[1:]
-
-
-def html_comment_count(body):
-    return len(_COMMENT.findall(body or ""))
 
 
 def intent_headline(body, title):

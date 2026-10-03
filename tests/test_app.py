@@ -44,17 +44,26 @@ def test_right_approves_calm_card_and_sends_pinned_decision(qtbot):
     assert store.marked == [(1, "approve")]
 
 
-def test_risky_card_needs_second_press_after_dwell(qtbot):
+def test_risky_card_approves_on_one_press_once_dwell_is_met(qtbot):
     card = make_card(ci={"state": "failure", "failing": ["t"]})
     w, store, client, t = make(qtbot, [card])
-    qtbot.keyClick(w, Qt.Key_Right)
     qtbot.keyClick(w, Qt.Key_Right)          # too soon: dwell < 2 s
     w.flush_pending()
     assert client.sent == []
     t["now"] += 3
+    w.reload()                               # a refresh does not restart the dwell clock
     qtbot.keyClick(w, Qt.Key_Right)
     w.flush_pending()
     assert client.sent and client.sent[0]["action"] == "approve"
+
+
+def test_close_against_the_ai_takes_one_press(qtbot):
+    card = make_card()
+    assert card["verdict"]["recommendation"] != "close"
+    w, store, client, _ = make(qtbot, [card])
+    qtbot.keyClick(w, Qt.Key_Left)
+    w.flush_pending()
+    assert client.sent and client.sent[0]["action"] == "close"
 
 
 def test_undo_cancels_pending_decision(qtbot):
@@ -66,12 +75,26 @@ def test_undo_cancels_pending_decision(qtbot):
     assert client.sent == [] and store.undone == [(1, "human")]
 
 
-def test_up_requests_deep_review_and_down_toggles_detail(qtbot):
+def test_r_requests_deep_review_and_f_toggles_detail(qtbot):
     w, store, client, _ = make(qtbot, [make_card(), make_card(number=2)])
-    qtbot.keyClick(w, Qt.Key_Up)
+    qtbot.keyClick(w, Qt.Key_R)
     assert store.deep == [1] and w.current()["number"] == 2
-    qtbot.keyClick(w, Qt.Key_Down)
+    qtbot.keyClick(w, Qt.Key_F)
     assert w.detail_open
+
+
+def test_up_down_scroll_the_diff_and_a_reload_keeps_the_place(qtbot):
+    w, store, _, _ = make(qtbot, [long_card()])
+    w.show(); w.resize(1200, 700)
+    sb = w.body.verticalScrollBar()
+    for _ in range(10):
+        qtbot.keyClick(w, Qt.Key_Down)
+    pos = sb.value()
+    assert pos > 0 and w.current()["number"] == 1 and not store.deep and not w.detail_open
+    w.reload()                                  # the 30 s refresh re-renders the same card
+    assert sb.value() == pos
+    qtbot.keyClick(w, Qt.Key_Up)
+    assert sb.value() < pos
 
 
 def test_external_repo_card_opens_browser_instead_of_deciding(qtbot):
@@ -206,7 +229,7 @@ def test_j_moves_through_files_and_expands_low_signal(qtbot):
 def test_dragon_approve_waits_for_every_flagged_hunk(qtbot):
     w, store, client, t = make(qtbot, [review_card()])
     t["now"] += 60                            # time alone does not open the gate
-    qtbot.keyClick(w, Qt.Key_Right); qtbot.keyClick(w, Qt.Key_Right)
+    qtbot.keyClick(w, Qt.Key_Right)
     w.flush_pending()
     assert client.sent == [] and "1 flagged hunk unvisited in train.py" in w.footer.text()
     qtbot.keyClick(w, Qt.Key_N)               # the ci.yml hunk is already on screen: one press reaches train.py

@@ -68,8 +68,8 @@ def stylesheet():
     return f"""
 QWidget {{ background:#F5F4F0; color:#1E1D1A; font-size:13px; }}
 
-QFrame#intentPanel, QFrame#filesPanel, QFrame#commitsPanel, QFrame#diffPanel, QFrame#coveragePanel,
-QFrame#descPanel, QFrame#rewardsPanel, QFrame#careTile {{ background:#FFFFFF; border:1px solid #E3E0D8; border-radius:6px; }}
+QFrame#intentPanel, QFrame#filesPanel, QFrame#diffPanel, QFrame#coveragePanel,
+QFrame#rewardsPanel, QFrame#careTile {{ background:#FFFFFF; border:1px solid #E3E0D8; border-radius:6px; }}
 QFrame#aiPanel {{ background:#FCFBF8; border:1px dashed #C9C5BB; border-radius:6px; }}
 QFrame#warningsStrip {{ background:#FDF6F4; border:1px solid #EDC9C3; border-radius:6px; }}
 QFrame#diffHeader {{ background:#FFFFFF; border:none; border-bottom:1px solid #E3E0D8;
@@ -77,11 +77,10 @@ QFrame#diffHeader {{ background:#FFFFFF; border:none; border-bottom:1px solid #E
 QFrame#statusStrip {{ background:#EDEBE6; border:none; border-top:1px solid #E3E0D8; }}
 QFrame#vDivider {{ background:#E3E0D8; max-width:1px; min-width:1px; }}
 QFrame#hDivider {{ background:#E3E0D8; max-height:1px; min-height:1px; }}
-QFrame#intentPanel QWidget, QFrame#filesPanel QWidget, QFrame#commitsPanel QWidget, QFrame#diffPanel QWidget,
+QFrame#intentPanel QWidget, QFrame#filesPanel QWidget, QFrame#diffPanel QWidget,
 QFrame#coveragePanel QWidget, QFrame#rewardsPanel QWidget, QFrame#careTile QWidget, QFrame#aiPanel QWidget,
-QFrame#warningsStrip QWidget, QFrame#statusStrip QWidget, QFrame#encounterTile QWidget,
-QFrame#descPanel QWidget {{ background:transparent; }}
-QFrame#diffPanel QPlainTextEdit, QFrame#filesPanel QListWidget, QFrame#descPanel QTextBrowser {{ background:#FFFFFF; }}
+QFrame#warningsStrip QWidget, QFrame#statusStrip QWidget, QFrame#encounterTile QWidget {{ background:transparent; }}
+QFrame#diffPanel QPlainTextEdit, QFrame#filesPanel QListWidget {{ background:#FFFFFF; }}
 QFrame#intentPanel QFrame#aiPanel {{ background:#FCFBF8; border:1px dashed #C9C5BB; border-radius:6px; }}
 QFrame#intentPanel QFrame#aiPanel[state="none"] {{ background:#F5F4F0; border:1px solid #E3E0D8; }}
 QFrame#intentPanel QFrame#pathStep {{ background:#F5F4F0; border:none; border-radius:4px; }}
@@ -132,10 +131,6 @@ QLabel#warnText {{ font-size:12px; }}
 QLabel#warnText[risky="true"] {{ color:#1E1D1A; }}
 QLabel#warnText[risky="false"] {{ color:#5B5850; }}
 QLabel#warnWhere {{ font-size:11px; color:#8A867C; }}
-QTextBrowser#descView {{ border:none; font-size:13px; color:#1E1D1A; selection-background-color:#E8F0F6; }}
-QLabel#descFooter {{ font-size:12px; color:#8A867C; border-top:1px solid #ECEAE3; padding-top:6px; }}
-QLabel#commitSha {{ font-family:"{mono}"; font-size:12px; color:#8A867C; }}
-QLabel#commitSubj {{ font-size:12px; color:#1E1D1A; }}
 
 QLabel#dot {{ min-width:6px; max-width:6px; min-height:6px; max-height:6px; border-radius:1px; background:#D2CEC4; }}
 QLabel#dot[state="done"] {{ background:#8A867C; }}

@@ -10,11 +10,11 @@ import textwrap
 import time
 
 from PySide6.QtCore import QPoint, QSize, Qt, QTimer
-from PySide6.QtGui import (QColor, QFont, QFontMetrics, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
-                           QTextDocument, QTextFormat, QTextFrameFormat, QTextLength, QTextTable)
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QSyntaxHighlighter, QTextCharFormat, QTextCursor,
+                           QTextFormat)
 from PySide6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar,
-                               QStackedWidget, QSizePolicy, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
+                               QStackedWidget, QSizePolicy, QTextEdit, QVBoxLayout, QWidget)
 
 from .. import card as C
 from ..config import load
@@ -196,41 +196,6 @@ class DiffView(QPlainTextEdit):
             self.verticalScrollBar().setValue(0)
 
 
-class DescView(QTextBrowser):
-    """PR description as GitHub markdown with raw HTML off, links inert and no resource loading, so an
-    untrusted body can neither run markup nor make the GUI fetch anything."""
-
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("descView")
-        self.setOpenLinks(False); self.setOpenExternalLinks(False)
-        self.setFocusPolicy(Qt.NoFocus)
-        self.setFrameShape(QFrame.NoFrame)
-
-    def loadResource(self, kind, url):  # noqa: N802 (Qt override): never load images or other resources
-        return None
-
-    def show_markdown(self, text):
-        doc = self.document()
-        doc.setMarkdown(text, QTextDocument.MarkdownFeatures(
-            QTextDocument.MarkdownDialectGitHub.value | QTextDocument.MarkdownNoHTML.value))
-        cur = QTextCursor(doc)
-        cur.select(QTextCursor.Document)
-        fmt = QTextBlockFormat(); fmt.setLineHeight(150, QTextBlockFormat.ProportionalHeight.value)
-        cur.mergeBlockFormat(fmt)
-        for f in doc.rootFrame().childFrames():
-            if isinstance(f, QTextTable):
-                tf = f.format()
-                tf.setBorder(1); tf.setBorderBrush(QColor(S.C["border"])); tf.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
-                tf.setCellPadding(4); tf.setCellSpacing(0); tf.setBorderCollapse(True)
-                tf.setWidth(QTextLength(QTextLength.PercentageLength, 100))
-                f.setFormat(tf)
-                for col in range(f.columns()):
-                    cell = f.cellAt(0, col); cf = cell.format(); cf.setBackground(QColor(S.C["bg"]))
-                    cell.setFormat(cf)
-        self.moveCursor(QTextCursor.Start)
-
-
 # --- small widget helpers ----------------------------------------------------------------------------------
 def label(text="", role=None, name=None, tone=None, rich=False, wrap=False, bold=False):
     w = QLabel(text)
@@ -294,12 +259,12 @@ class Window(QMainWindow):
     def __init__(self, store, client, load_cards, clock=time.time, undo_ms=5000):
         super().__init__()
         self.store, self.client, self.load_cards, self.clock, self.undo_ms = store, client, load_cards, clock, undo_ms
-        self.deck, self.idx, self.armed, self.shown_at = [], 0, None, clock()
+        self.deck, self.idx, self.shown_at = [], 0, clock()
         self.detail_open, self.detail_seen, self.pending, self.one_off = False, False, None, False
         self.quest_started, self.quest_total, self.session_start, self.noted = False, 0, clock(), set()
         self.quest_complete, self.celebration = False, Q.celebration()
         self.reviews, self.review, self.flavours, self.list_rows = {}, None, {}, []
-        self.rendered_key, self.warn_all, self.desc_toggled, self.desc_open = None, False, None, False
+        self.rendered_key, self.warn_all = None, False
         self.setWindowTitle("pr-swipe")
         self.setStyleSheet(S.stylesheet())
         self.setFont(S.ui_font())
@@ -400,27 +365,8 @@ class Window(QMainWindow):
         self.body.verticalScrollBar().valueChanged.connect(lambda _: self._mark_on_screen())
         dl.addWidget(self.body, 1)
 
-        self.right_col = QWidget(); self.right_col.setFixedWidth(420)
-        self.right_lay = QVBoxLayout(self.right_col); self.right_lay.setContentsMargins(0, 0, 0, 0)
-        self.right_lay.setSpacing(12)
-        self.desc_panel, dsl = frame("descPanel", spacing=8)
-        self.desc_title = label(role="label")
-        self.desc_source = label(name="sourceNote", tone="sprout")
-        dsl.addWidget(row(self.desc_title, "stretch", self.desc_source))
-        self.desc_view = DescView()
-        dsl.addWidget(self.desc_view, 1)
-        self.desc_footer = label(name="descFooter", wrap=True)
-        dsl.addWidget(self.desc_footer)
-        self.commits_panel, cl = frame("commitsPanel", spacing=8)
-        self.commits_title = label(role="label")
-        self.commits_source = label("git · verified ✓", name="sourceNote", tone="sprout")
-        cl.addWidget(row(self.commits_title, "stretch", self.commits_source))
-        self.commits_grid = QGridLayout(); self.commits_grid.setHorizontalSpacing(8); self.commits_grid.setVerticalSpacing(8)
-        self.commits_grid.setColumnStretch(1, 1)
-        cl.addLayout(self.commits_grid)
-
         review = QWidget(); rl = QHBoxLayout(review); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(12)
-        rl.addWidget(self.left_col); rl.addWidget(diff_panel, 1); rl.addWidget(self.right_col)
+        rl.addWidget(self.left_col); rl.addWidget(diff_panel, 1)
         lay.addWidget(review, 1)
 
         self.coverage_panel, cvl = frame("coveragePanel", QHBoxLayout, (12, 8, 12, 8), 16)
@@ -438,7 +384,7 @@ class Window(QMainWindow):
         lay.addWidget(self.coverage_panel)
 
         self.keys, main_keys = {}, []
-        for key, name in (("←", "close"), ("→", "approve"), ("↑", "deep review"), ("↓", "whole diff")):
+        for key, name in (("←", "close"), ("→", "approve"), ("↑↓", "scroll"), ("f", "whole diff"), ("r", "deep review")):
             cap, lab = label(key, name="keycap"), label(name, name="keyLabel")
             cap.setAlignment(Qt.AlignCenter); cap.setFixedSize(28, 24)
             self.keys[name] = (cap, lab)
@@ -448,10 +394,6 @@ class Window(QMainWindow):
         self.secondary_keys.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         lay.addWidget(row(*main_keys, divider, self.secondary_keys, spacing=18))
         return screen
-
-    def resizeEvent(self, ev):  # noqa: N802 (Qt override)
-        self.right_col.setFixedWidth(max(320, min(480, int(self.width() * 0.22))))
-        super().resizeEvent(ev)
 
     def _centered_column(self):
         screen = QWidget(); outer = QVBoxLayout(screen); outer.setContentsMargins(20, 16, 20, 16)
@@ -549,7 +491,7 @@ class Window(QMainWindow):
 
     def begin_quest(self):
         self.quest_started, self.quest_complete, self.quest_total = True, False, len(self.deck)
-        self.session_start, self.noted = self.clock(), set()
+        self.session_start, self.noted, self.rendered_key = self.clock(), set(), None  # first card starts fresh
         self.render()
 
     def _start_screen(self):
@@ -601,10 +543,14 @@ class Window(QMainWindow):
 
     # --- rendering ---
     def render(self):
+        """Draw the current card. The 30 s reload re-renders the same card: its dwell clock, flags and
+        diff scroll position carry over, so only a new card starts fresh."""
         c = self.current()
-        self.armed, self.shown_at, self.detail_seen, self.one_off = None, self.clock(), False, False
-        if c is not None and D.card_key(c) != self.rendered_key:
-            self.rendered_key, self.warn_all, self.desc_toggled = D.card_key(c), False, None
+        same = c is not None and D.card_key(c) == self.rendered_key
+        scroll = self.body.verticalScrollBar().value()
+        if not same:
+            self.shown_at, self.detail_seen, self.one_off = self.clock(), False, False
+            self.rendered_key, self.warn_all = (D.card_key(c) if c is not None else None), False
         if c is not None and not self.quest_started:
             return self._start_screen()
         if c is None:
@@ -619,9 +565,10 @@ class Window(QMainWindow):
         self._pr_block(c)
         self._warnings(c)
         self._intent(c)
-        self._right_column(c)
         self._review_on(c)
         self._render_body()
+        if same:
+            self.body.verticalScrollBar().setValue(scroll)
         self._footer()
 
     def _pr_block(self, c):
@@ -697,7 +644,7 @@ class Window(QMainWindow):
         self.verdict_row.setVisible(bool(has_ai))
         if not has_ai:
             self.ai_summary.setText(f"{v['reason']}. The path above uses verified files and CI only.\n"
-                                    "↑ requests a deep review.")
+                                    "r requests a deep review.")
             return
         self.verdict_chip.setText(v["recommendation"].upper())
         set_props(self.verdict_chip, verdict="close" if v["recommendation"] == "close" else "approve")
@@ -715,49 +662,6 @@ class Window(QMainWindow):
             lines.append("Deep review: " + c["deep_review"]["summary"])
             lines += [f"  • {f}" for f in c["deep_review"]["findings"]]
         self.ai_summary.setText("\n".join(lines))
-
-    def _right_column(self, c):
-        rec = c.get("_record")
-        own = c["author_class"] != "external" and any((c["context"].get(k) or "").strip() for k in ("purpose", "solution"))
-        body = (rec or {}).get("body") or ""
-        self.desc_open = self.desc_toggled if self.desc_toggled is not None else not own
-        self.desc_title.setText(("▾ " if self.desc_open else "▸ ") + "DESCRIPTION")
-        self.desc_source.setText("PR body · verified ✓" if rec else "not verified")
-        set_props(self.desc_source, tone="sprout" if rec else "muted")
-        shown = SU.clean_body(body) if self.desc_open else SU.desc_preview(body)
-        self.desc_view.show_markdown(shown if body.strip() else
-                                     ("_(no description)_" if rec else "_No verified description for this card._"))
-        lines = len([l for l in body.splitlines() if l.strip()])
-        notes = []
-        if not self.desc_open and lines > 4:
-            notes.append(f"⋯ {lines - 4} more lines")
-        if SU.html_comment_count(body):
-            notes.append(f"{SU.html_comment_count(body)} HTML comments hidden")
-        notes.append("raw HTML and images not rendered · d " + ("collapses" if self.desc_open else "expands"))
-        self.desc_footer.setText(" · ".join(notes))
-        lh = self.desc_view.fontMetrics().lineSpacing()
-        if self.desc_open:
-            self.desc_view.setMaximumHeight(16777215)
-        else:  # fit the preview paragraph, up to six lines, so the cut never lands mid-line
-            doc = self.desc_view.document(); doc.setTextWidth(self.desc_view.viewport().width())
-            self.desc_view.setMaximumHeight(int(min(doc.size().height(), lh * 1.5 * 6)) + 12)
-        commits = c.get("_commits", [])
-        self.commits_title.setText(f"COMMITS · {len(commits)}")
-        clear(self.commits_grid)
-        for i, x in enumerate(commits[:8]):
-            sha = label(x["sha"][:7], name="commitSha"); sha.setFixedWidth(64)
-            self.commits_grid.addWidget(sha, i, 0, Qt.AlignTop)
-            self.commits_grid.addWidget(label(x["subject"], name="commitSubj", wrap=True), i, 1)
-        if len(commits) > 8:
-            self.commits_grid.addWidget(label(f"+{len(commits) - 8} more", role="caption"), 8, 1)
-        self.commits_panel.setVisible(bool(commits))
-        while self.right_lay.count():  # detach panels and stretches; the panels are reused
-            self.right_lay.takeAt(0)
-        order = [self.commits_panel, self.desc_panel] if own else [self.desc_panel, self.commits_panel]
-        for w in order:
-            self.right_lay.addWidget(w, 1 if w is self.desc_panel and self.desc_open else 0)
-        if not self.desc_open:
-            self.right_lay.addStretch(1)
 
     def show_all_warnings(self, c):
         dlg = QDialog(self); dlg.setWindowTitle("All warnings"); dlg.resize(760, 480)
@@ -941,7 +845,7 @@ class Window(QMainWindow):
         for w in (cap, lab):
             set_props(w, disabled="true" if locked else "false")
         hints = ([("j/k", "file"), ("n", "next flag")] if self.review is not None else []) + [
-            ("d", "description"), ("w", "all warnings"), ("t", "note"), ("m", "AI missed"), ("x", "one-off" + (" ✓" if self.one_off else "")),
+            ("w", "all warnings"), ("t", "note"), ("m", "AI missed"), ("x", "one-off" + (" ✓" if self.one_off else "")),
             ("s", "skip"), ("u", "undo"), ("o", "browser")]
         self.secondary_keys.setText("&nbsp;&nbsp; ".join(
             f'<b style="color:{S.C["text2"]}">{k}</b>&nbsp;{t.replace(" ", "&nbsp;")}' for k, t in hints))
@@ -955,7 +859,7 @@ class Window(QMainWindow):
             for m in c["detail"]["comments"]:
                 lines.append(("file", f"💬 comment by {m['author']}"))
                 lines += [("meta", l) for l in m["body"].splitlines()]
-            self.diff_path.setText("whole diff"); self.diff_info.setText("↓ or Esc to return"); self.hunk_state.setText("")
+            self.diff_path.setText("whole diff"); self.diff_info.setText("f or Esc to return"); self.hunk_state.setText("")
             return self.body.show_lines(lines or [("meta", "(empty diff)")])
         if self.review is None and not c["hotspots"]:  # nothing flagged: the whole diff is the review
             lines = RV.render_diff(c["detail"]["diff"], [])
@@ -972,8 +876,8 @@ class Window(QMainWindow):
                 lines.append(RV.callout(h))
                 for l in h.get("lines", "").splitlines():
                     lines.append(("add" if l.startswith("+") else "del" if l.startswith("-") else "ctx", f"     {l}"))
-            self.diff_path.setText("hotspots"); self.diff_info.setText("↓ for the full diff"); self.hunk_state.setText("")
-            return self.body.show_lines(lines or [("meta", "No hotspots. ↓ for the full diff.")])
+            self.diff_path.setText("hotspots"); self.diff_info.setText("f for the full diff"); self.hunk_state.setText("")
+            return self.body.show_lines(lines or [("meta", "No hotspots. f for the full diff.")])
         r = self.review
         rows = r.rows()
         if not rows:
@@ -1024,7 +928,10 @@ class Window(QMainWindow):
             return self.undo()
         if c is None:
             return
-        if k == Qt.Key_Down:
+        if k in (Qt.Key_Up, Qt.Key_Down):
+            sb = self.body.verticalScrollBar()
+            return sb.setValue(sb.value() + (3 if k == Qt.Key_Down else -3) * sb.singleStep())
+        if k == Qt.Key_F:
             self.detail_open = not self.detail_open
             self.detail_seen = self.detail_seen or self.detail_open
             return self._render_body()
@@ -1036,9 +943,6 @@ class Window(QMainWindow):
         if k == Qt.Key_X:
             self.one_off = not self.one_off
             return self._footer()
-        if k == Qt.Key_D:
-            self.desc_toggled = not self.desc_open
-            return self._right_column(c)
         if k == Qt.Key_W and c["hidden_content"]:
             return self.show_all_warnings(c)
         if k in (Qt.Key_J, Qt.Key_K) and self.review is not None:
@@ -1052,7 +956,7 @@ class Window(QMainWindow):
         if k == Qt.Key_S:
             self.store.record(c, "skip", one_off=self.one_off)
             return self._advance(skip=True)
-        if k == Qt.Key_Up:
+        if k == Qt.Key_R:
             self.store.request_deep_review(c)
             self.store.record(c, "deep-review", one_off=self.one_off)
             return self._advance(skip=True)
@@ -1063,24 +967,18 @@ class Window(QMainWindow):
         if not c["can_merge"]:
             self.store.request_open(c["url"])
             return self._advance(skip=True)
+        # ← and → are the reviewer's call: one press, whatever the AI said. Only a dragon's approve
+        # waits, and only until its flagged hunks have been looked at (no second press after that).
         dwell = self.clock() - self.shown_at
-        if D.needs_confirm(c, action):
+        if action == "approve" and D.needs_confirm(c, action):
             r = self.review
-            gate_ok = (r.cov.gate_ok() if r is not None else dwell >= DWELL_S) if action == "approve" else True
-            if self.armed != action or not gate_ok:
-                self.armed = action
-                if action == "close":
-                    why = "AI did not suggest closing: press ← again to confirm"
-                elif r is None:
-                    why = "🐉 Hold your ground: hunks must be on screen 2 s, then press again"
-                elif not gate_ok:
-                    left = r.cov.remaining()
-                    files = ", ".join(sorted({p.rsplit("/", 1)[-1] for p, _ in left}))
-                    why = (f"🐉 Hold your ground — {len(left)} flagged hunk{'s' if len(left) != 1 else ''} "
-                           f"unvisited in {files}. n jumps there.")
-                else:
-                    why = "🐉 Every flagged hunk seen: press → again to approve"
-                return self._footer(why)
+            if r is None and dwell < DWELL_S:
+                return self._footer("🐉 Hold your ground: hunks must be on screen 2 s first")
+            if r is not None and not r.cov.gate_ok():
+                left = r.cov.remaining()
+                files = ", ".join(sorted({p.rsplit("/", 1)[-1] for p, _ in left}))
+                return self._footer(f"🐉 Hold your ground — {len(left)} flagged hunk{'s' if len(left) != 1 else ''} "
+                                    f"unvisited in {files}. n jumps there.")
         self.flush_pending()
         decision = {"action": action, "repo": c["repo"], "number": c["number"], "head_sha": c["head_sha"],
                     "card_sha256": C.digest({k: v for k, v in c.items() if not k.startswith("_")}),

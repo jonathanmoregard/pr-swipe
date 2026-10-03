@@ -44,7 +44,6 @@ def test_headline_strips_links_and_caps_length_and_falls_back_to_title():
 def test_clean_body_hides_comments_and_reveals_invisible_characters():
     out = SU.clean_body("a <!-- hidden --> @​bob")
     assert "hidden" not in out and "​" not in out and "U+200B" in out
-    assert SU.html_comment_count(DEPENDABOT_BODY) == 2
 
 
 def test_path_without_ai_uses_file_roles_verified_counts_and_ci():
@@ -100,14 +99,6 @@ def test_step_text_is_a_glance_and_intent_prefers_the_stated_value():
     assert SU.intent(c) == ("The server was spawned from a config.", "first sentence of PR body · verified ✓", "sprout", "")
 
 
-def test_description_preview_stops_before_a_table_or_fence():
-    body = "Bumps foo.\n\nWhy now.\n| a | b |\n|---|---|\n| 1 | 2 |\nmore"
-    assert SU.desc_preview(body) == "Bumps foo."
-    assert SU.desc_preview("Why now.\n| a | b |") == "Why now."
-    assert SU.desc_preview("```\ncode\n```") == "_(starts with a table or code block · d expands)_"
-    assert SU.desc_preview("1\n2\n3\n4\n5\n6") == "1\n2\n3\n4"
-
-
 def test_value_first_drops_merge_lead_in():
     assert SU.value_first("Once this merges, you can swipe PRs.") == "You can swipe PRs."
     assert SU.value_first("With this merged, commands can't touch the cache.") == "Commands can't touch the cache."
@@ -143,7 +134,3 @@ def test_briefing_drives_the_intent_and_keeps_risks_out_of_the_path():
 def test_internal_only_briefing_is_labelled_as_such():
     c = briefed(); c["context"].update(internal_only=True, headline="No visible change: tests stop flaking.")
     assert SU.intent(c)[1] == "no visible change · AI · unverified"
-
-
-def test_description_preview_skips_headings():
-    assert SU.desc_preview("## Why\n\nForms tools never worked.\n\n## How\nx") == "Forms tools never worked."

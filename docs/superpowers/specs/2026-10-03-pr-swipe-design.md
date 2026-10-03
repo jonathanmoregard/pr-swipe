@@ -179,13 +179,15 @@ SHA-256 of the previous record. Records every decision and every GitHub write at
   mergeable state, diffstat; purpose and solution (labelled "from PR text"); verdict with
   reason; hidden-content banner (red) if any; hotspot hunks with syntax highlighting.
 - Keys:
-  - **←** close. If the AI says "keep", ask for a second press to confirm.
-  - **→** approve (enters merge train). PRs with failing CI or rule hotspots need a
-    second press after the hunks have been on screen ≥2 s. External-repo PRs: ← and →
-    open the PR in the browser instead (no executor write path).
-  - **↑** deep AI review (request goes to outbox; card moves to the back and returns
+  - **←** close, one press, whatever the AI recommends (the call is the reviewer's).
+  - **→** approve (enters merge train), one press. PRs with failing CI or rule hotspots
+    stay locked until the hunks have been on screen ≥2 s (review view: every flagged
+    hunk visited); no second press. External-repo PRs: ← and → open the PR in the
+    browser instead (no executor write path).
+  - **↑ / ↓** scroll the diff pane.
+  - **r** deep AI review (request goes to outbox; card moves to the back and returns
     when the review is in).
-  - **↓** detail view: full diff, all comments, checks. `o` opens in browser
+  - **f** detail view: full diff, all comments, checks. `o` opens in browser
     (via outbox). Esc returns.
   - **u** undo last decision if the executor has not yet acted on it.
   - **s** skip (to back of deck).
