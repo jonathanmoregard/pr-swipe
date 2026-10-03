@@ -15,6 +15,7 @@ from .audit import AuditLog
 from .config import load
 from .github import AppTokens, GitHub, GitHubError
 from .train import Train
+from .verify import Verifier, is_verified
 
 log = logging.getLogger("pr-swipe.executor")
 CLOSE_NOTE = "Closed via pr-swipe (human decision)."
@@ -27,8 +28,11 @@ MAX_HANDLE_S = 6 * 30.0
 
 
 class Executor:
-    def __init__(self, gh, audit, train, installed):
+    def __init__(self, gh, audit, train, installed, verified, verifier=None):
+        """`verified(repo, number, head_sha)` must be true before any decision acts: the human saw
+        evidence fetched by the verifier for exactly that head, not a card the user's uid wrote."""
         self.gh, self.audit, self.train, self.installed = gh, audit, train, installed
+        self.verified, self.verifier = verified, verifier
         self.lock = threading.Lock()
 
     def handle(self, d) -> dict:
@@ -43,6 +47,9 @@ class Executor:
             try:
                 if not self.installed(d["repo"]):
                     return {"ok": False, "error": "repo not covered by the merge-gate App"}
+                if not self.verified(d["repo"], d["number"], d["head_sha"]):
+                    self.audit.append("unverified", repo=d["repo"], number=d["number"], head_sha=d["head_sha"])
+                    return {"ok": False, "error": "no verified evidence for this head: card not shown from GitHub data"}
                 if d["action"] == "close":
                     return self._close(d)
                 return {"ok": self.train.enqueue(d)}
@@ -63,6 +70,8 @@ class Executor:
         return {"ok": True}
 
     def tick(self):
+        if self.verifier is not None:  # network-bound; never under the decision lock
+            self.verifier.step()
         with self.lock:
             self.train.step()
 
@@ -113,7 +122,9 @@ def main():
     gh = GitHub(tokens)
     audit = AuditLog(cfg.state / "audit.jsonl")
     train = Train(gh, audit, cfg.state / "train.json", cfg.returns)
-    serve(Executor(gh, audit, train, tokens.installed), cfg.socket)
+    verifier = Verifier(gh, tokens, git_root=cfg.git, verified_dir=cfg.verified, inbox=cfg.inbox)
+    verified = lambda repo, n, head: is_verified(cfg.verified, repo, n, head)  # noqa: E731
+    serve(Executor(gh, audit, train, tokens.installed, verified, verifier), cfg.socket)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QInputDialog, QLabel, QMainWindow, 
 from .. import card as C
 from ..config import load
 from . import deck as D
+from . import evidence as EV
 from . import quest as Q
 from .store import ExecutorClient, Store
 
@@ -156,8 +157,11 @@ class Window(QMainWindow):
             f"by {c['author']} ({c['author_class']}) · started {age} · idle {c['signals']['days_since_update']}d · "
             f"CI {c['ci']['state']}{' ' + ','.join(c['ci']['failing']) if c['ci']['failing'] else ''} · "
             f"{c['mergeable']} · {ds['files']} files +{ds['additions']} -{ds['deletions']}"
+            + (f" · verified ✓ {c['head_sha'][:10]}" if c.get("_verified") else "")
             + (" · overlaps #" + ", #".join(map(str, c["signals"]["overlapping_open"])) if c["signals"]["overlapping_open"] else ""))
         warn = []
+        if c.get("_unverified"):
+            warn.append("UNVERIFIED: external repo, shown as the collector saw it; any swipe opens the browser")
         if c.get("_returned"):
             warn.append(f"RETURNED: {c['_returned']}")
         for h in c["hidden_content"]:
@@ -165,11 +169,11 @@ class Window(QMainWindow):
         self.banner.setText("\n".join(warn)); self.banner.setVisible(bool(warn))
         v = c["verdict"]
         ctx = c["context"]
-        lines = [f"AI: {v['recommendation'].upper()} ({v['confidence']})"
+        lines = [f"AI (unverified): {v['recommendation'].upper()} ({v['confidence']})"
                  + (" · STALE" if v["stale"] else "")
                  + (f" · superseded by {', '.join(v['superseded_by'])}" if v["superseded_by"] else "")
                  + f" — {v['reason']}",
-                 f"Purpose (from PR text): {ctx['purpose']}", f"Solution (from PR text): {ctx['solution']}"]
+                 f"AI summary (unverified): purpose: {ctx['purpose']}", f"AI summary (unverified): solution: {ctx['solution']}"]
         if ctx["notes"]:
             lines.append(f"Notes: {ctx['notes']}")
         if c.get("deep_review"):
@@ -335,7 +339,8 @@ class Window(QMainWindow):
 def main():
     cfg = load()
     app = QApplication(sys.argv)
-    w = Window(Store(cfg), ExecutorClient(cfg.socket), load_cards=lambda: C.load_cards(cfg.inbox))
+    w = Window(Store(cfg), ExecutorClient(cfg.socket),
+               load_cards=lambda: EV.verified_cards(cfg, C.load_cards(cfg.inbox)))
     w.show()
     app.aboutToQuit.connect(w.flush_pending)
     sys.exit(app.exec())

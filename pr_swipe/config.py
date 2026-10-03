@@ -11,6 +11,8 @@ class Config:
     outbox: Path     # GUI writes requests, collector reads
     returns: Path    # executor writes returned-card notes, GUI reads
     state: Path      # executor/GUI private state (train, audit, gui-state, metrics)
+    git: Path        # verifier's bare mirrors (prswipe only)
+    verified: Path   # verifier records: GitHub-sourced evidence per PR head (prswipe only)
     socket: Path
     agent_logins: frozenset
     model: str
@@ -26,6 +28,8 @@ def load(env=os.environ) -> Config:
         outbox=root / "outbox",
         returns=root / "returns",
         state=root / "state",
+        git=root / "git",
+        verified=root / "state" / "verified",
         socket=Path(env.get("PR_SWIPE_SOCKET", "/run/pr-swipe/executor.sock")),
         agent_logins=logins,
         model=env.get("PR_SWIPE_MODEL", "claude-opus-5-5"),

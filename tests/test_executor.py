@@ -7,12 +7,12 @@ from tests.fakes import FakeGitHub
 R = "jonathanmoregard/x"
 
 
-def setup(tmp_path, installed=lambda repo: True):
+def setup(tmp_path, installed=lambda repo: True, verified=lambda repo, n, head: True):
     gh = FakeGitHub()
     (tmp_path / "returns").mkdir()
     audit = AuditLog(tmp_path / "audit.jsonl")
     train = Train(gh, audit, tmp_path / "train.json", tmp_path / "returns")
-    return gh, Executor(gh, audit, train, installed)
+    return gh, Executor(gh, audit, train, installed, verified)
 
 
 def d(action, n, sha):
@@ -76,3 +76,12 @@ def test_client_waits_longer_than_the_executor_can_take():
     import pr_swipe.executor as E
     from pr_swipe.gui.store import CLIENT_TIMEOUT
     assert CLIENT_TIMEOUT > E.LOCK_WAIT + E.MAX_HANDLE_S
+
+
+def test_decision_on_an_unverified_head_is_refused(tmp_path):
+    gh, ex = setup(tmp_path, verified=lambda repo, n, head: head == "a" * 40)
+    gh.add_pr(R, 1, "b" * 40); gh.add_pr(R, 2, "b" * 40)
+    r1 = ex.handle(d("approve", 1, "b" * 40))
+    r2 = ex.handle(d("close", 2, "b" * 40))
+    assert not r1["ok"] and not r2["ok"] and "verified" in r1["error"]
+    assert ex.train.queued() == set() and gh.calls == []
