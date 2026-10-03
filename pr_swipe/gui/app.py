@@ -504,7 +504,7 @@ class Window(QMainWindow):
         parts = [f"by {esc(c['author'])} ({esc(c['author_class'])})", f"started {esc(c['first_commit_at'][:10])}",
                  f"idle {esc(sig['days_since_update'])}d", ci_txt,
                  span(f"+{int(ds['additions'])}", S.C["add_fg"], mono=True) + " "
-                 + span(f"−{int(ds['deletions'])}", S.C["del_fg"], mono=True) + f" · {int(ds['files'])} files"]
+                 + span(f"−{int(ds['deletions'])}", S.C["del_fg"], mono=True) + f" · {int(ds['files'])} file{'' if ds['files'] == 1 else 's'}"]
         if c["mergeable"] != "clean":
             parts.append(span(esc(c["mergeable"]), S.TONES["dragon"][0]))
         if sig["overlapping_open"]:
@@ -538,7 +538,8 @@ class Window(QMainWindow):
         set_props(self.verdict_chip, verdict="close" if v["recommendation"] == "close" else "approve")
         self.verdict_reason.setText(f"{v['confidence']} confidence — {v['reason']}"
                                     + (" · STALE" if v["stale"] else "")
-                                    + (f" · superseded by {', '.join(v['superseded_by'])}" if v["superseded_by"] else ""))
+                                    + (f" · superseded by {', '.join(v['superseded_by'])}"
+                                       if v["superseded_by"] and "superseded" not in v["reason"] else ""))
         lines = [f"Purpose  {ctx['purpose']}", f"Solution  {ctx['solution']}"]
         if ctx["notes"]:
             lines.append(f"Notes  {ctx['notes']}")
@@ -708,6 +709,10 @@ class Window(QMainWindow):
                 lines += [("meta", l) for l in m["body"].splitlines()]
             self.diff_path.setText("whole diff"); self.diff_info.setText("↓ or Esc to return"); self.hunk_state.setText("")
             return self.body.show_lines(lines or [("meta", "(empty diff)")])
+        if self.review is None and not c["hotspots"]:  # nothing flagged: the whole diff is the review
+            lines = RV.render_diff(c["detail"]["diff"], [])
+            self.diff_path.setText("diff"); self.diff_info.setText("no hotspots flagged"); self.hunk_state.setText("")
+            return self.body.show_lines(lines or [("meta", "This card carries no diff.")])
         if self.review is None:
             lines = []
             for h in c["hotspots"]:
