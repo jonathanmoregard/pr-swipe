@@ -229,3 +229,11 @@ class GitHub:
 
     def comment(self, repo, n, body):
         return self._req("POST", f"/repos/{repo}/issues/{int(n)}/comments", repo=repo, body={"body": body})
+
+    # --- follow-ups (user token, one private repo) ---
+    def list_issues(self, repo, label):
+        return self._pages(f"/repos/{repo}/issues?state=all&labels={urllib.parse.quote(label)}", repo=repo)
+
+    def create_issue(self, repo, title, body, labels):
+        return self._req("POST", f"/repos/{repo}/issues", repo=repo,
+                         body={"title": title, "body": body, "labels": list(labels)})
