@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pr-swipe"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["PySide6", "jsonschema", "PyJWT", "cryptography"]
+dependencies = ["PySide6", "jsonschema", "PyJWT", "cryptography", "Pygments"]
 
 [project.scripts]
 pr-swipe-collector = "pr_swipe.collector:main"

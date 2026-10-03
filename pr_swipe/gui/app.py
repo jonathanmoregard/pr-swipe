@@ -23,6 +23,7 @@ from . import quest as Q
 from . import review as RV
 from . import style as S
 from . import summary as SU
+from . import syntax as SX
 from .store import ExecutorClient, Store
 
 DWELL_S = 2.0
@@ -56,12 +57,15 @@ class ReviewState:
         return normal + low if self.low_open or not low else normal + [{"group": len(low)}]
 
     def file_lines(self, f):
-        if f["binary"]:
-            return [("meta", f"[binary file {f['path']}: not shown]")]
         if f["path"] not in self.diffs:
             d = self.view.file_diff(self.base, self.head, f["path"])
             self.diffs[f["path"]] = d[:FILE_DIFF_MAX] + ("\n[file diff truncated]" if len(d) > FILE_DIFF_MAX else "")
-        return RV.render_diff(self.diffs[f["path"]], self.spots, path=f["path"])
+        d = self.diffs[f["path"]]
+        # git calls age files text (ASCII header), and undecodable bytes arrive as U+FFFD: neither is readable as a diff
+        if f["binary"] or f["path"].endswith(".age") or "age-encryption.org/v1" in d[:2000] or "�" in d:
+            return RV.binary_lines(f["path"], self.view.blob(self.base, f["path"]), self.view.blob(self.head, f["path"]),
+                                   self.spots)
+        return RV.render_diff(d, self.spots, path=f["path"])
 
     def file_spots(self, path):
         return [(i, h) for i, h in enumerate(self.spots) if h["file"] == path]
@@ -84,23 +88,44 @@ def _u16(text):
     return len(text.encode("utf-16-le")) // 2  # Qt positions count UTF-16 units; emoji are 2
 
 
+SYNTAX = {  # category -> (colour, bold, italic)
+    "keyword": (S.TONES["ghost"][0], True, False), "builtin": (S.TONES["ghost"][0], False, False),
+    "string": (S.TONES["traveler"][0], False, False), "comment": (S.C["text3"], False, True),
+    "number": (S.TONES["ai"][0], False, False), "function": (S.C["text"], True, False),
+    "attr": ("#8A3B6F", False, False),
+}
+
+
 class DiffHighlighter(QSyntaxHighlighter):
     def __init__(self, doc):
         super().__init__(doc)
-        self.kinds = []
+        self.kinds, self.spans = [], {}
 
-    def highlightBlock(self, text):
+    def highlightBlock(self, text):  # noqa: N802 (Qt override)
         n = self.currentBlock().blockNumber()
         if n >= len(self.kinds):
             return
-        fg, _, bold, lineno = _KIND_FMT[self.kinds[n]]
-        fmt = QTextCharFormat(); fmt.setForeground(QColor(fg))
+        kind = self.kinds[n]
+        fg, _, bold, lineno = _KIND_FMT[kind]
+        code = n in self.spans or (self.spans and kind in ("add", "del", "ctx"))
+        base = QTextCharFormat()
+        base.setForeground(QColor(S.C["text"] if code and kind != "ctx" else fg))
         if bold:
-            fmt.setFontWeight(QFont.DemiBold)
-        self.setFormat(0, _u16(text), fmt)
+            base.setFontWeight(QFont.DemiBold)
+        self.setFormat(0, _u16(text), base)
         if lineno:
             ln = QTextCharFormat(); ln.setForeground(QColor(lineno))
             self.setFormat(0, 5, ln)
+            sign = QTextCharFormat(); sign.setForeground(QColor(fg))
+            self.setFormat(5, 1, sign)
+        for col, length, cat in self.spans.get(n, ()):
+            colour, b, it = SYNTAX[cat]
+            f = QTextCharFormat(); f.setForeground(QColor(colour))
+            if b:
+                f.setFontWeight(QFont.DemiBold)
+            f.setFontItalic(it)
+            start = _u16(text[:col])
+            self.setFormat(start, _u16(text[col:col + length]), f)
 
 
 class DiffView(QPlainTextEdit):
@@ -113,10 +138,12 @@ class DiffView(QPlainTextEdit):
         self.highlighter = DiffHighlighter(self.document())  # keep a reference or Qt drops it
         self.lines = []
 
-    def show_lines(self, lines, focus=None):
-        """lines: [(kind, text)]. focus: index of a line to centre on."""
+    def show_lines(self, lines, focus=None, path=None):
+        """lines: [(kind, text)]. focus: index of a line to centre on. path: file name for syntax colours
+        (whole-diff mode takes it from the `file` lines)."""
         self.lines = lines
         self.highlighter.kinds = [k for k, _ in lines]
+        self.highlighter.spans = SX.spans(lines, path)
         self.setPlainText("\n".join(t for _, t in lines))
         sels, block = [], self.document().firstBlock()
         for kind, _ in lines:
@@ -283,7 +310,9 @@ class Window(QMainWindow):
         self.intent_source = label(name="sourceNote", tone="sprout")
         self.intent_text = label(name="intentHeadline", wrap=True)
         head = QWidget(); hl = QVBoxLayout(head); hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(4)
+        self.intent_pr = label(role="meta", wrap=True)
         hl.addWidget(row(label("INTENT", role="label"), self.intent_source, "stretch")); hl.addWidget(self.intent_text)
+        hl.addWidget(self.intent_pr)
         ll.addWidget(head)
         self.path_source = label(name="sourceNote")
         self.path_box = QWidget(); self.path_lay = QHBoxLayout(self.path_box)
@@ -603,15 +632,10 @@ class Window(QMainWindow):
         self.warnings.setVisible(bool(rows))
 
     def _intent(self, c):
-        rec = c.get("_record")
-        body = rec.get("body") if rec else None
-        headline, from_body = SU.intent_headline(body, c["title"])
+        headline, source, tone, pr_line = SU.intent(c)
         self.intent_text.setText(headline)
-        if not rec:
-            self.intent_source.setText("PR title · not verified"); set_props(self.intent_source, tone="muted")
-        else:
-            self.intent_source.setText(("first sentence of PR body" if from_body else "PR title") + " · verified ✓")
-            set_props(self.intent_source, tone="sprout")
+        self.intent_source.setText(source); set_props(self.intent_source, tone=tone)
+        self.intent_pr.setText(pr_line); self.intent_pr.setVisible(bool(pr_line))
         self.path_source.setText(SU.path_source_note(c))
         clear(self.path_lay)
         for i, st in enumerate(SU.solution_path(c, c.get("_commits", []))):
@@ -679,7 +703,8 @@ class Window(QMainWindow):
         if len(commits) > 8:
             self.commits_grid.addWidget(label(f"+{len(commits) - 8} more", role="caption"), 8, 1)
         self.commits_panel.setVisible(bool(commits))
-        self.right_lay.removeWidget(self.desc_panel); self.right_lay.removeWidget(self.commits_panel)
+        while self.right_lay.count():  # detach panels and stretches; the panels are reused
+            self.right_lay.takeAt(0)
         order = [self.commits_panel, self.desc_panel] if own else [self.desc_panel, self.commits_panel]
         for w in order:
             self.right_lay.addWidget(w, 1 if w is self.desc_panel and self.desc_open else 0)
@@ -880,7 +905,7 @@ class Window(QMainWindow):
         focus = None
         if hunk:
             focus = next((i for i, (k, t) in enumerate(lines) if k == "hunk" and t.startswith(hunk)), None)
-        self.body.show_lines(lines, focus=focus)
+        self.body.show_lines(lines, focus=focus, path=f["path"])
         self._coverage()
 
     def _footer(self, msg=""):

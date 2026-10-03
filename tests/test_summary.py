@@ -53,7 +53,7 @@ def test_path_without_ai_uses_file_roles_verified_counts_and_ci():
     c["context"] = {"purpose": "", "solution": "", "notes": ""}
     steps = SU.solution_path(c)
     assert [s["text"] for s in steps] == ["package.json: 2 version ranges bumped, 1 major",
-                                          "pnpm-lock.yaml regenerated (+1 −1)", "CI test job fails"]
+                                          "pnpm-lock.yaml regenerated (+1 −1)", "CI fails: test"]
     assert all(s["source"] != "ai" for s in steps)
     assert "no AI" in SU.path_source_note(c)
 
@@ -64,8 +64,8 @@ def test_path_with_ai_marks_the_ai_step_unverified_and_stays_capped():
     c["context"] = {"purpose": "p", "solution": "retry with backoff", "notes": ""}
     commits = [{"sha": "a" * 40, "subject": "add helper"}, {"sha": "b" * 40, "subject": "Merge main"}]
     steps = SU.solution_path(c, commits)
-    assert steps[0] == {"text": "add helper", "src": "commit aaaaaaa", "source": "plain"}
-    assert {"text": "retry with backoff", "src": "AI · unverified", "source": "ai"} in steps
+    assert steps[0] == {"text": "Add helper", "src": "commit aaaaaaa", "source": "plain"}
+    assert {"text": "Retry with backoff", "src": "AI · unverified", "source": "ai"} in steps
     assert len(steps) <= SU.MAX_STEPS
 
 
@@ -85,3 +85,16 @@ def test_steps_and_body_stay_readable():
     assert len(SU.short("y" * 500)) <= SU.STEP_MAX
     out = SU.clean_body('<details><summary>Notes</summary><a href="u">x</a></details> `ignore <dependency name>`')
     assert out == "Notesx `ignore <dependency name>`"
+
+
+def test_step_text_is_a_glance_and_intent_prefers_the_stated_value():
+    assert SU.step_text("fix(mcp): let a caller override USER_GOOGLE_EMAIL (for gdocs-review)") == \
+        "Let a caller override USER_GOOGLE_EMAIL"
+    assert len(SU.step_text("feat: " + "word " * 40)) <= SU.STEP_SHORT
+    c = make_card(); c["context"]["purpose"] = "Make the Forms tools usable. Because reasons."
+    c["_record"] = {"body": "The server was spawned from a config. More."}
+    head, src, tone, pr = SU.intent(c)
+    assert head == "Make the Forms tools usable." and "unverified" in src and tone == "ai"
+    assert pr == "PR says: The server was spawned from a config."
+    c["context"]["purpose"] = ""
+    assert SU.intent(c) == ("The server was spawned from a config.", "first sentence of PR body · verified ✓", "sprout", "")

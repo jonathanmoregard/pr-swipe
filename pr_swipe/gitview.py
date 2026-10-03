@@ -68,6 +68,13 @@ class GitView:
         return self._git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", _sha(base), _sha(head),
                          "--", _path(path))
 
+    def blob(self, rev, path, limit=SHOW_MAX):
+        """Raw bytes of path at rev (capped), or None when the file does not exist there."""
+        try:
+            return self._git("cat-file", "blob", f"{_sha(rev)}:{_path(path)}", binary=True)[:limit]
+        except subprocess.CalledProcessError:
+            return None
+
     def show(self, head, path) -> str:
         data = self._git("cat-file", "blob", f"{_sha(head)}:{_path(path)}", binary=True)
         text = data[:SHOW_MAX].decode("utf-8", "replace")

@@ -122,3 +122,55 @@ def render_diff(diff_text, hotspots, path=None) -> list:
         else:
             out.append(("meta", line))
     return out
+
+
+AGE_MAGIC = b"age-encryption.org/v1\n"
+
+
+def age_recipients(data):
+    """Recipient stanzas from an age header: [(type, id)]. X25519 stanzas carry only an ephemeral share,
+    so their id is None; ssh stanzas carry a tag of the recipient's key."""
+    if not data or not data.startswith(AGE_MAGIC):
+        return None
+    out = []
+    for line in data[len(AGE_MAGIC):].split(b"\n"):
+        if line.startswith(b"---"):
+            break
+        if line.startswith(b"-> "):
+            parts = line[3:].decode("ascii", "replace").split()
+            kind = parts[0] if parts else "?"
+            if kind.endswith("-grease"):  # random padding stanzas, not recipients
+                continue
+            out.append((kind, parts[1] if kind.startswith("ssh-") and len(parts) > 1 else None))
+    return out
+
+
+def _describe_recipients(rs):
+    kinds = {}
+    for k, _ in rs:
+        kinds[k] = kinds.get(k, 0) + 1
+    return f"{len(rs)} recipient{'s' if len(rs) != 1 else ''} (" + ", ".join(f"{n}× {k}" for k, n in kinds.items()) + ")"
+
+
+def binary_lines(path, old, new, hotspots):
+    """[(kind, text)] for a binary file: flags first, then what can be checked without decoding it."""
+    out = [callout(h) for h in sorted((h for h in hotspots if h["file"] == path), key=lambda h: h["source"] != "rule")]
+    size = lambda b: "absent" if b is None else f"{len(b)} bytes"  # noqa: E731
+    out.append(("meta", f"binary file · before: {size(old)} · after: {size(new)}"))
+    ra, rb = age_recipients(old), age_recipients(new)
+    if rb is not None or ra is not None:
+        out.append(("hunk", "age-encrypted secret: contents cannot be shown; check who can decrypt it"))
+        if ra is not None:
+            out.append(("del", f"     - before  {_describe_recipients(ra)}"))
+        if rb is not None:
+            out.append(("add", f"     + after   {_describe_recipients(rb)}"))
+        tags_a = {i for _, i in ra or [] if i}
+        tags_b = {i for _, i in rb or [] if i}
+        out += [("add", f"     + ssh recipient {t}") for t in sorted(tags_b - tags_a)]
+        out += [("del", f"     - ssh recipient {t}") for t in sorted(tags_a - tags_b)]
+        if ra is not None and rb is not None and len(ra) == len(rb) and tags_a == tags_b:
+            out.append(("ctx", "       same recipients; the ciphertext changed (re-encrypted or new value)"))
+        return out
+    if new:
+        out.append(("ctx", "       first bytes: " + new[:24].hex(" ")))
+    return out

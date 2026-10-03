@@ -42,6 +42,18 @@ def short(text, limit=STEP_MAX):
     return first if len(first) <= limit else first[:limit - 1].rstrip() + "…"
 
 
+_CC_PREFIX = re.compile(r"^[a-z]+(\([^)]*\))?!?:\s*")
+_PAREN = re.compile(r"\s*\([^()]*\)")
+STEP_SHORT = 72
+
+
+def step_text(text):
+    """A path step in a glance: no conventional-commit prefix, no parentheticals, one short sentence."""
+    t = _PAREN.sub("", _CC_PREFIX.sub("", re.sub(r"\s+", " ", text or "").strip()))
+    t = short(t, STEP_SHORT)
+    return t[:1].upper() + t[1:]
+
+
 def html_comment_count(body):
     return len(_COMMENT.findall(body or ""))
 
@@ -131,8 +143,8 @@ def solution_path(card, commits=()):
     steps = []
     if ai_solution:
         for cm in [c for c in commits if not c["subject"].startswith("Merge ")][:2]:
-            steps.append({"text": short(cm["subject"]), "src": f"commit {cm['sha'][:7]}", "source": "plain"})
-        steps.append({"text": short(ai_solution), "src": "AI · unverified", "source": "ai"})
+            steps.append({"text": step_text(cm["subject"]), "src": f"commit {cm['sha'][:7]}", "source": "plain"})
+        steps.append({"text": step_text(ai_solution), "src": "AI · unverified", "source": "ai"})
     else:
         by_role = {}
         for f in fds:
@@ -144,15 +156,16 @@ def solution_path(card, commits=()):
                               "src": ROLE_TAG[role] + (" · 🚩 rule" if flagged else "")})
     for path, h in rule.items():
         if ai_solution and len(steps) < MAX_STEPS - 1:
-            steps.append({"text": f"{path}: {h.get('why', h.get('rule', 'rule flag'))}",
+            steps.append({"text": f"Touches {h.get('rule', 'a flagged path')}: {path.rsplit('/', 1)[-1]}",
                           "src": "files · 🚩 rule", "source": "risk"})
     steps = steps[:MAX_STEPS - 1]
     ci = card.get("ci", {})
     if ci.get("state") == "failure":
-        failing = ", ".join(ci.get("failing") or []) or "a"
-        steps.append({"text": f"CI {failing} job fails", "src": "CI · verified", "source": "risk"})
-    elif ci.get("state") not in ("success", None):
-        steps.append({"text": f"CI {ci['state']}", "src": "CI · verified", "source": "plain"})
+        failing = ", ".join(ci.get("failing") or [])
+        steps.append({"text": short(f"CI fails: {failing}" if failing else "CI fails", STEP_SHORT),
+                      "src": "CI · verified", "source": "risk"})
+    elif ci.get("state") == "pending":
+        steps.append({"text": "CI still running", "src": "CI · verified", "source": "plain"})
     return steps[:MAX_STEPS]
 
 
@@ -194,3 +207,15 @@ def warning_rows(card):
 
 def warning_total(card):
     return len(card.get("hidden_content", [])) + bool(card.get("_unverified")) + bool(card.get("_returned"))
+
+
+def intent(card):
+    """(headline, source, tone, pr_line). The value, if the AI stated one, else the PR's own words.
+    pr_line is the verified sentence shown under an AI headline so the evidence stays in view."""
+    rec = card.get("_record")
+    said, from_body = intent_headline(rec.get("body") if rec else None, card["title"])
+    verified = ("first sentence of PR body" if from_body else "PR title") + (" · verified ✓" if rec else " · not verified")
+    purpose = (card.get("context", {}).get("purpose") or "").strip()
+    if purpose:
+        return short(purpose, HEADLINE_MAX), "what it enables · AI · unverified", "ai", f"PR says: {said}"
+    return said, verified, "sprout" if rec else "muted", ""

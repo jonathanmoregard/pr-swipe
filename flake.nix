@@ -6,7 +6,7 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       py = pkgs.python3;
-      deps = ps: with ps; [ pyside6 jsonschema pyjwt cryptography ];
+      deps = ps: with ps; [ pyside6 jsonschema pyjwt cryptography pygments ];
       pr-swipe = py.pkgs.buildPythonApplication {
         pname = "pr-swipe";
         version = "0.1.0";

@@ -175,6 +175,7 @@ def review_card():
              {"source": "ai", "file": "src/train.py", "hunk": "@@ -40 +40 @@", "lines": "+retry(force=True)",
               "why": "retries without re-checking head", "severity": "high"}]
     c = make_card(hotspots=spots)
+    c["context"]["purpose"] = "Merges survive a transient 409. The rest is detail."
     c.update(_verified=True, _view=FakeView(), _commits=[{"sha": "c" * 40, "subject": "feat: retry"}],
              _record={"merge_base": "b" * 40, "head_sha": "a" * 40, "body": "Retry merges on 409.\n\nDetails."})
     return c
@@ -187,7 +188,8 @@ def test_review_view_orders_files_and_collapses_low_signal(qtbot):
                         "⚠ high src/train.py  +1 -1"]
     assert rows[-1].startswith("▸ 1 low-signal") and not any("vendor/lib.go" in r for r in rows)
     assert "🚩 rule: ci-workflow" in w.body.toPlainText()
-    assert w.intent_text.text() == "Retry merges on 409." and "verified" in w.intent_source.text()
+    assert w.intent_text.text() == "Merges survive a transient 409." and "unverified" in w.intent_source.text()
+    assert w.intent_pr.text() == "PR says: Retry merges on 409."
     assert w.gate_label.text() == "🔒 Approve locked" and w.keys["approve"][1].text() == "approve 🔒"
 
 

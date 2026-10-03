@@ -117,6 +117,7 @@ QFrame#filesPanel QLabel#sevChip {{ font-family:"{mono}"; font-size:10px; color:
 QLabel#intentHeadline {{ font-size:17px; font-weight:500; color:#1E1D1A; }}
 QLabel#sourceNote {{ font-size:11px; color:#8A867C; }}
 QLabel#sourceNote[tone="sprout"] {{ color:#2D7046; }}
+QLabel#sourceNote[tone="ai"] {{ color:#8A5A00; }}
 QLabel#stepNum {{ font-family:"{mono}"; font-size:13px; color:#8A867C; }}
 QLabel#stepText {{ font-size:13px; color:#1E1D1A; }}
 QLabel#stepSrc {{ font-size:11px; color:#8A867C; }}
