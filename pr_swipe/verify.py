@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from .card import write_json_atomic
-from .github import REPO_RE, GitHubError
+from .github import REPO_RE, GitHubError, git_auth_header
 from .gitview import GitView
 
 log = logging.getLogger("pr-swipe.verify")
@@ -130,7 +130,7 @@ class Verifier:
         env = {}
         if url.startswith("https://"):  # token via env-provided config, never argv
             env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-                   "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {self.tokens.token(repo)}"}
+                   "GIT_CONFIG_VALUE_0": git_auth_header(self.tokens.token(repo))}
         self._git(mirror, "fetch", "--no-tags", "--quiet", url,
                   f"+refs/pull/{int(n)}/head:refs/prs/{int(n)}",
                   f"+refs/heads/{base_ref}:refs/base/{base_ref}", env=env)

@@ -1,4 +1,5 @@
 """Minimal GitHub REST client. Repo names are validated before they reach a URL."""
+import base64
 import calendar
 import json
 import re
@@ -16,6 +17,12 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 JSON = "application/vnd.github+json"
 DIFF = "application/vnd.github.diff"
 FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"}
+
+
+def git_auth_header(token):
+    """http.extraheader value for git over HTTPS. GitHub's git endpoint rejects `bearer`; it takes
+    basic auth as user x-access-token, for App installation tokens and user tokens alike."""
+    return "AUTHORIZATION: basic " + base64.b64encode(f"x-access-token:{token}".encode()).decode()
 
 
 class GitHubError(Exception):

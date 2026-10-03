@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import analysis, card as C, reviewer
 from .config import load
-from .github import GitHub, GhCliToken, GitHubError
+from .github import GitHub, GhCliToken, GitHubError, git_auth_header
 
 log = logging.getLogger("pr-swipe.collector")
 MAX_DETAIL_DIFF = 300000
@@ -147,7 +147,7 @@ def run_deep_review(gh_token, cfg, req):
         return
     env = dict(os.environ, GIT_CONFIG_COUNT="2",
                GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",
-               GIT_CONFIG_VALUE_0=f"AUTHORIZATION: bearer {gh_token}",
+               GIT_CONFIG_VALUE_0=git_auth_header(gh_token),
                GIT_CONFIG_KEY_1="core.hooksPath", GIT_CONFIG_VALUE_1="/dev/null",
                GIT_TERMINAL_PROMPT="0")
     with tempfile.TemporaryDirectory() as work:
