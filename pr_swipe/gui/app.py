@@ -20,6 +20,7 @@ from .. import card as C
 from ..config import load
 from . import deck as D
 from . import evidence as EV
+from . import loops_deck as LD
 from . import quest as Q
 from . import review as RV
 from . import style as S
@@ -273,7 +274,9 @@ class Window(QMainWindow):
         self.encounter_screen = self._build_encounter()
         self.start_screen = self._build_start()
         self.complete_screen = self._build_complete()
-        for s in (self.encounter_screen, self.start_screen, self.complete_screen):
+        self.loops_screen = self._build_loops()
+        self.loops_open, self.loops_requested, self.loops_snap = False, set(), {}
+        for s in (self.encounter_screen, self.start_screen, self.complete_screen, self.loops_screen):
             self.screens.addWidget(s)
         root = QWidget(); lay = QVBoxLayout(root); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
         lay.addWidget(self.screens, 1); lay.addWidget(self._build_status())
@@ -389,9 +392,9 @@ class Window(QMainWindow):
         lay.addWidget(row(*main_keys, divider, self.secondary_keys, spacing=18))
         return screen
 
-    def _centered_column(self):
+    def _centered_column(self, width=680):
         screen = QWidget(); outer = QVBoxLayout(screen); outer.setContentsMargins(20, 16, 20, 16)
-        col = QWidget(); col.setFixedWidth(680)
+        col = QWidget(); col.setFixedWidth(width)
         cl = QVBoxLayout(col); cl.setContentsMargins(0, 0, 0, 0); cl.setSpacing(24)
         mid = QHBoxLayout(); mid.addStretch(1); mid.addWidget(col); mid.addStretch(1)
         outer.addStretch(1); outer.addLayout(mid); outer.addStretch(1)
@@ -450,8 +453,67 @@ class Window(QMainWindow):
         cl.addWidget(self.tally)
         div = QFrame(); div.setObjectName("hDivider")
         cl.addWidget(div)
-        cl.addWidget(label("New encounters will appear here when the collector finds them.", role="meta"))
+        cl.addWidget(label("New encounters will appear here when the collector finds them. L shows open loops.", role="meta"))
         return screen
+
+    def _build_loops(self):
+        screen, cl = self._centered_column(width=900)
+        self.loops_kicker, self.loops_title = self._heading(cl)
+        self.loops_meta = label(role="meta")
+        cl.addWidget(self.loops_meta)
+        self.loops_body = QPlainTextEdit(readOnly=True)
+        self.loops_body.setObjectName("loopBody"); self.loops_body.setFocusPolicy(Qt.NoFocus)
+        self.loops_body.setMinimumHeight(220)
+        cl.addWidget(self.loops_body)
+        self.loops_keys = label(name="secondaryKeys", rich=True, wrap=True)
+        self.loops_keys.setText("&nbsp;&nbsp; ".join(
+            f'<b style="color:{S.C["text2"]}">{esc(k)}</b>&nbsp;{t.replace(" ", "&nbsp;")}' for k, t in LD.KEYS))
+        cl.addWidget(self.loops_keys)
+        return screen
+
+    def _render_loops(self):
+        self.loops_snap = self.store.loops()
+        items = LD.pending(self.loops_snap, self.loops_requested)
+        today = self.loops_snap.get("today") or time.strftime("%Y-%m-%d", time.localtime(self.clock()))
+        self.screens.setCurrentWidget(self.loops_screen)
+        self.loops_kicker.setText(LD.heading(self.loops_snap, self.loops_requested))
+        if not items:
+            self.loops_title.setText("Nothing open. Every ball is handled.")
+            self.loops_meta.setText("" if self.loops_snap else "No snapshot yet: pr-swipe-loops has not run.")
+            self.loops_body.hide()
+            return self._footer("L returns to the PR deck")
+        x = items[0]
+        self.loops_title.setText(x["title"])
+        self.loops_meta.setText(LD.meta_line(x, today))
+        self.loops_body.setPlainText(x["body"] or "(no details)")
+        self.loops_body.show()
+        self._footer()
+
+    def _loop_key(self, ev):
+        k = ev.key()
+        if k in (Qt.Key_L, Qt.Key_Escape):
+            self.loops_open = False
+            return self.render()
+        items = LD.pending(self.loops_snap, self.loops_requested)
+        if k in (Qt.Key_Up, Qt.Key_Down):
+            sb = self.loops_body.verticalScrollBar()
+            return sb.setValue(sb.value() + (3 if k == Qt.Key_Down else -3) * sb.singleStep())
+        if not items:
+            return
+        x = items[0]
+        if k == Qt.Key_O and x["url"]:
+            return self.store.request_open(x["url"])
+        shift = bool(ev.modifiers() & Qt.ShiftModifier)
+        action = {Qt.Key_Right: "close", Qt.Key_Left: "drop", Qt.Key_R: "agent",
+                  Qt.Key_S: "snooze-week" if shift else "snooze"}.get(k)
+        if action is None:
+            return
+        self.store.request_loop(action, x["number"])
+        self.loops_requested.add(x["number"])
+        self._render_loops()
+        word = {"close": "done", "drop": "dropped", "agent": "handed to an agent",
+                "snooze": "snoozed a day", "snooze-week": "snoozed a week"}[action]
+        self._footer(f"#{x['number']} {word} · pr-swipe-loops applies it within 5 min")
 
     def _build_status(self):
         strip, sl = frame("statusStrip", QHBoxLayout, (20, 0, 20, 0), 16)
@@ -539,6 +601,8 @@ class Window(QMainWindow):
     def render(self):
         """Draw the current card. The 30 s reload re-renders the same card: its dwell clock, flags and
         diff scroll position carry over, so only a new card starts fresh."""
+        if self.loops_open:
+            return self._render_loops()
         c = self.current()
         same = c is not None and D.card_key(c) == self.rendered_key
         scroll = self.body.verticalScrollBar().value()
@@ -822,7 +886,7 @@ class Window(QMainWindow):
             set_props(w, disabled="true" if locked else "false")
         hints = ([("j/k", "file"), ("n", "next flag")] if self.review is not None else []) + [
             ("w", "all warnings"), ("t", "note"), ("m", "AI missed"), ("x", "one-off" + (" ✓" if self.one_off else "")),
-            ("s", "skip"), ("u", "undo"), ("o", "browser")]
+            ("s", "skip"), ("u", "undo"), ("o", "browser"), ("L", "open loops")]
         self.secondary_keys.setText("&nbsp;&nbsp; ".join(
             f'<b style="color:{S.C["text2"]}">{k}</b>&nbsp;{t.replace(" ", "&nbsp;")}' for k, t in hints))
 
@@ -898,6 +962,11 @@ class Window(QMainWindow):
     # --- actions ---
     def keyPressEvent(self, ev):
         c, k = self.current(), ev.key()
+        if self.loops_open:
+            return self._loop_key(ev)
+        if k == Qt.Key_L:
+            self.loops_open = True
+            return self._render_loops()
         if c is not None and not self.quest_started:
             return self.begin_quest()
         if k == Qt.Key_U:

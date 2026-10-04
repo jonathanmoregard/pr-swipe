@@ -131,6 +131,7 @@ QListWidget#fileList {{ border:none; outline:0; font-family:"{mono}"; font-size:
 QListWidget#fileList::item {{ border:none; color:#1E1D1A; padding-left:12px; }}
 QListWidget#fileList::item:selected {{ background:#EEEBE3; color:#1E1D1A; }}
 
+QPlainTextEdit#loopBody {{ background:#FFFFFF; border:1px solid #E3E0D8; border-radius:6px; padding:10px; font-size:14px; color:#1E1D1A; }}
 QPlainTextEdit#diffView {{ border:none; padding:6px 0; font-family:"{mono}"; font-size:12px; color:#5B5850;
   selection-background-color:#E8F0F6; selection-color:#1E1D1A; }}
 QScrollBar:vertical {{ background:transparent; width:8px; margin:2px; }}

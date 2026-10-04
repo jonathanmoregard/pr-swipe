@@ -88,6 +88,19 @@ class Store:
     def request_open(self, url):
         self._request({"kind": "open", "url": url})
 
+    def loops(self) -> dict:
+        """Snapshot of open loops written by the user-side pr-swipe-loops service; {} if none yet."""
+        try:
+            return json.loads((Path(self.cfg.inbox) / "loops" / "open.json").read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def request_loop(self, action, number):
+        """The GUI holds no token: pr-swipe-loops applies this (close, drop, snooze, snooze-week, agent)."""
+        out = Path(self.cfg.outbox) / "loops"
+        out.mkdir(exist_ok=True)
+        write_json_atomic(out, f"{uuid.uuid4().hex}.json", {"action": action, "number": int(number)}, mode=0o660)
+
     def request_deep_review(self, card):
         self._request({"kind": "deep-review", "repo": card["repo"], "number": card["number"],
                        "head_sha": card["head_sha"]})
