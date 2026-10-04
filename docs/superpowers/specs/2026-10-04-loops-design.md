@@ -27,7 +27,7 @@ loops get their own deck.
   - loop text is data: the GUI renders it as plain text, and the server never follows links in it.
   The tool is allow-listed for Claude Code and Codex once, in the `.claude` config repo.
 - **Cloud agents** (claude.ai/code, Codex cloud) write the same way when the MCP server is available to
-  them; otherwise they end their PR body with a fenced `loops` block, and the local filer picks it up
+  them; otherwise they end their PR body with a fenced `loops` block, and the `pr-swipe-loops` service picks it up
   on merge. No token for them in this phase.
 
 ## Data model (issue = loop)
@@ -44,7 +44,7 @@ loops get their own deck.
 
 ## Sources (who files loops)
 
-1. **Merged PRs** (`pr-swipe-followups`, now `pr-swipe-loops-filer`): the briefing's manual steps,
+1. **Merged PRs** (`pr-swipe-loops` service): the briefing's manual steps,
    snapshotted from inbox cards while the PR is open, filed when GitHub says merged; closed unmerged
    files nothing. Key = repo, PR, normalised text. Also reads a fenced `loops` block from the PR body.
 2. **Agents directly** via the MCP `add` tool (blocked-on-human, decisions, chores).
@@ -53,20 +53,26 @@ loops get their own deck.
 
 ## GUI: the Loops deck
 
+The GUI runs as the `prswipe` system user with no network and no GitHub token, and stays that way.
+The user-side `pr-swipe-loops` service writes a snapshot of open loops to `inbox/loops/open.json`
+(0640, readable by the GUI's group) and applies the GUI's requests from `outbox/loops/*.json`
+(close / drop / snooze / hand off, each naming an issue number), exactly like the collector serves
+`outbox/`. Requests for issues without the `loop` label are refused by the same gates.
+
 A second deck next to the PR deck, same quest framing, same keys where they mean the same thing:
 → done, ← drop (close as not planned), `s` snooze 1 day (`S` 1 week), `r` hand to an agent (label
 `owner:agent`), `o` open the issue/source in the browser, ↑/↓ scroll. Each card shows title, kind,
-source link, age, due. Order: overdue, blocked, due soon, oldest. The deck reads the issue list once
-per reload; writes go through the same library as the MCP server.
+source link, age, due. Order: overdue, blocked, due soon, oldest. The deck re-reads the snapshot on every reload.
 
 ## Units
 
 - `pr_swipe/loops.py` (pure-ish): `Loop` parse/format to and from issues, `key()`, `add/list/update/close`
-  over a GitHub client, the gates above. Shared by MCP server, filer and GUI.
+  over a GitHub client, the gates above. Shared by the MCP server and the `pr-swipe-loops` service (the GUI only reads its snapshot).
 - `pr_swipe/loops_mcp.py`: stdio MCP server exposing the four tools, repo from env.
-- `pr_swipe/followups.py` → filer on top of `loops.py`.
+- `pr_swipe/loops_service.py` (`pr-swipe-loops`, user service): files merged PRs' steps (replaces
+  `followups.py`), writes the snapshot, applies GUI requests.
 - `pr_swipe/gui/loops_deck.py`: the deck.
-- nixos-config #303: user service for the filer; MCP server on PATH.
+- nixos-config #303: `pr-swipe-loops` user service, `inbox/loops` + `outbox/loops` dirs, MCP server on PATH.
 - `.claude` (separate PR, required by its config rules): register + allow-list the MCP server.
 
 ## Testing
