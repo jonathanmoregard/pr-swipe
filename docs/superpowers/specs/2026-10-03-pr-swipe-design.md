@@ -52,7 +52,12 @@ AI review runs only on PRs authored by the user or the user's agents (same GitHu
 identity, or the agent-push App once §7 lands). Third-party PRs show deterministic
 analysis only, labelled "no AI review: external author".
 
-Out of scope: auto-merge without a human swipe; GitHub web UI as merge path (break-glass
+Auto-merge without a human swipe applies to one class only (owner decision, 2026-10-03): Dependabot
+version bumps in repos with CI. The executor checks it from GitHub data alone: every commit by
+dependabot[bot] and GitHub-signed, the diff only dependency files or workflow `uses:` lines, CI with at
+least one check all green; then the ordinary merge train runs. See `pr_swipe/autobump.py`.
+
+Out of scope: any other auto-merge without a human swipe; GitHub web UI as merge path (break-glass
 only, by temporarily editing a ruleset); Wayland migration; running agents as separate
 Unix users.
 
@@ -174,13 +179,15 @@ SHA-256 of the previous record. Records every decision and every GitHub write at
   mergeable state, diffstat; purpose and solution (labelled "from PR text"); verdict with
   reason; hidden-content banner (red) if any; hotspot hunks with syntax highlighting.
 - Keys:
-  - **←** close. If the AI says "keep", ask for a second press to confirm.
-  - **→** approve (enters merge train). PRs with failing CI or rule hotspots need a
-    second press after the hunks have been on screen ≥2 s. External-repo PRs: ← and →
-    open the PR in the browser instead (no executor write path).
-  - **↑** deep AI review (request goes to outbox; card moves to the back and returns
+  - **←** close, one press, whatever the AI recommends (the call is the reviewer's).
+  - **→** approve (enters merge train), one press. PRs with failing CI or rule hotspots
+    stay locked until the hunks have been on screen ≥2 s (review view: every flagged
+    hunk visited); no second press. External-repo PRs: ← and → open the PR in the
+    browser instead (no executor write path).
+  - **↑ / ↓** scroll the diff pane.
+  - **r** deep AI review (request goes to outbox; card moves to the back and returns
     when the review is in).
-  - **↓** detail view: full diff, all comments, checks. `o` opens in browser
+  - **f** detail view: full diff, all comments, checks. `o` opens in browser
     (via outbox). Esc returns.
   - **u** undo last decision if the executor has not yet acted on it.
   - **s** skip (to back of deck).
@@ -296,3 +303,13 @@ X11 injection residual. Decision explicitly postponed by the user.
   merge attempt fails.
 - NixOS: VM test lane asserting the executor socket is not connectable by `jonathan`
   and the credential is unreadable by `jonathan`.
+
+## Addendum 2026-10-03: feedback capture (learning loop deferred)
+
+The GUI logs typed feedback to `state/feedback.jsonl` (mode 0600, local only, never committed or uploaded):
+decisions (approve/close with dwell, detail-seen, AI verdict, `override` = swipe contradicts AI approve/close),
+undo (`reason` human|refused), skip, deep-review, `note` (key `n`, optionally pinned to a hotspot) and
+`missed` (key `m`, an issue the AI did not flag). Key `x` marks the card one-off ("don't learn from this").
+No learning consumes this yet. Design review scheduled 2026-10-17, informed by
+`research-agent/reports/d6441685112c4dd6ab6654e15e7b888d.md`: memory writes only from human actions,
+human-approved rules, approve/close never trains the finder, replay set + cold slice before any learning.

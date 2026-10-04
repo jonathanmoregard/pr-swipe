@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- pr-swipe app icon: a cut amethyst, the loot of a cleared quest. -->
+  <ellipse cx="128" cy="238" rx="64" ry="9" fill="#2A2160" opacity="0.18"/>
+  <g stroke="#2A2160" stroke-width="3" stroke-linejoin="round">
+    <!-- crown -->
+    <polygon points="64,44 24,100 80,100" fill="#9A8EE2"/>
+    <polygon points="64,44 104,44 80,100" fill="#C4BCF4"/>
+    <polygon points="104,44 80,100 128,100" fill="#A99EEA"/>
+    <polygon points="104,44 152,44 128,100" fill="#DCD7FA"/>
+    <polygon points="152,44 128,100 176,100" fill="#B3A9EE"/>
+    <polygon points="152,44 192,44 176,100" fill="#8D80DA"/>
+    <polygon points="192,44 176,100 232,100" fill="#7366C8"/>
+    <!-- pavilion -->
+    <polygon points="24,100 80,100 128,226" fill="#6A5CBE"/>
+    <polygon points="80,100 128,100 128,226" fill="#8578D4"/>
+    <polygon points="128,100 176,100 128,226" fill="#5649A8"/>
+    <polygon points="176,100 232,100 128,226" fill="#40348E"/>
+  </g>
+  <polygon points="64,44 192,44 232,100 128,226 24,100" fill="none" stroke="#2A2160" stroke-width="8" stroke-linejoin="round"/>
+  <!-- glints -->
+  <polygon points="88,56 98,56 82,90 74,90" fill="#FFFFFF" opacity="0.75"/>
+  <polygon points="92,112 102,112 120,176" fill="#FFFFFF" opacity="0.35"/>
+  <path d="M206 16 L212 34 L230 40 L212 46 L206 64 L200 46 L182 40 L200 34 Z" fill="#FFFFFF" stroke="#2A2160" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M40 150 L43 159 L52 162 L43 165 L40 174 L37 165 L28 162 L37 159 Z" fill="#FFF4C2" stroke="#2A2160" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

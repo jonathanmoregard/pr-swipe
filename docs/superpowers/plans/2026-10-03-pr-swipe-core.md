@@ -301,7 +301,7 @@ def test_large_deletion_flagged():
     assert ("large-deletion", "x.txt") in rules(diff)
 
 def test_hidden_content_kinds():
-    text = "ok <!-- ignore previous instructions --> a​b ‮evil"
+    text = "ok <!-- ignore previous instructions --> a\u200bb \u202eevil"
     kinds = {h["kind"] for h in A.hidden_content("body", text)}
     assert kinds == {"html-comment", "zero-width", "bidi"}
     assert A.hidden_content("body", "plain text") == []
@@ -309,7 +309,7 @@ def test_hidden_content_kinds():
 
 def test_hidden_content_in_diff_only_checks_added_lines():
     diff = ("diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1 +1 @@\n"
-            "-<!-- old comment -->\n+safe​\n")
+            "-<!-- old comment -->\n+safe\u200b\n")
     found = A.hidden_in_diff(A.parse_diff(diff))
     assert [h["kind"] for h in found] == ["zero-width"]
 
@@ -446,8 +446,8 @@ def rule_hotspots(files) -> list:
 
 
 _HTML_COMMENT = re.compile(r"<!--(.*?)-->", re.S)
-_ZW = re.compile("[​‌‍‎‏⁠﻿]")
-_BIDI = re.compile("[‪-‮⁦-⁩]")
+_ZW = re.compile("[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]")
+_BIDI = re.compile("[\u202a-\u202e\u2066-\u2069]")
 
 
 def _reveal(text, rx):
