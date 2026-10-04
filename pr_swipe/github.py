@@ -230,10 +230,18 @@ class GitHub:
     def comment(self, repo, n, body):
         return self._req("POST", f"/repos/{repo}/issues/{int(n)}/comments", repo=repo, body={"body": body})
 
-    # --- follow-ups (user token, one private repo) ---
-    def list_issues(self, repo, label):
-        return self._pages(f"/repos/{repo}/issues?state=all&labels={urllib.parse.quote(label)}", repo=repo)
+    # --- loops (user token; pr_swipe.loops pins the repo and checks the label) ---
+    def list_issues(self, repo, label, state="all"):
+        if state not in ("open", "closed", "all"):
+            raise ValueError(state)
+        return self._pages(f"/repos/{repo}/issues?state={state}&labels={urllib.parse.quote(label)}", repo=repo)
+
+    def get_issue(self, repo, n):
+        return self._req("GET", f"/repos/{repo}/issues/{int(n)}", repo=repo)[1]
 
     def create_issue(self, repo, title, body, labels):
         return self._req("POST", f"/repos/{repo}/issues", repo=repo,
-                         body={"title": title, "body": body, "labels": list(labels)})
+                         body={"title": title, "body": body, "labels": list(labels)})[1]
+
+    def edit_issue(self, repo, n, **fields):
+        return self._req("PATCH", f"/repos/{repo}/issues/{int(n)}", repo=repo, body=fields)[1]

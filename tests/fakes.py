@@ -92,3 +92,43 @@ class FakeGitHub:
     def comment(self, repo, n, body):
         self.calls.append(("comment", repo, n, body))
         return 201, {}
+
+
+class FakeIssues:
+    """In-memory issues for one or more repos: the surface pr_swipe.loops uses."""
+    def __init__(self):
+        self.issues, self.comments, self.calls = {}, [], []
+
+    def _issue(self, repo, n):
+        if (repo, n) not in self.issues:
+            raise GitHubError(404, "nf")
+        return self.issues[(repo, n)]
+
+    def list_issues(self, repo, label, state="all"):
+        self.calls.append(("list", repo, label, state))
+        return [dict(i) for (r, _), i in sorted(self.issues.items()) if r == repo
+                and any(l["name"] == label for l in i["labels"]) and state in ("all", i["state"])]
+
+    def get_issue(self, repo, n):
+        return dict(self._issue(repo, n))
+
+    def create_issue(self, repo, title, body, labels):
+        n = len(self.issues) + 1
+        self.calls.append(("create", repo, title))
+        self.issues[(repo, n)] = {"number": n, "title": title, "body": body, "state": "open",
+                                  "state_reason": None, "labels": [{"name": l} for l in labels],
+                                  "html_url": f"https://github.com/{repo}/issues/{n}",
+                                  "created_at": "2026-10-01T00:00:00Z"}
+        return dict(self.issues[(repo, n)])
+
+    def edit_issue(self, repo, n, **fields):
+        self.calls.append(("edit", repo, n, tuple(sorted(fields))))
+        i = self._issue(repo, n)
+        if "labels" in fields:
+            fields = dict(fields, labels=[{"name": l} for l in fields["labels"]])
+        i.update(fields)
+        return dict(i)
+
+    def comment(self, repo, n, body):
+        self._issue(repo, n)
+        self.comments.append((repo, n, body))
