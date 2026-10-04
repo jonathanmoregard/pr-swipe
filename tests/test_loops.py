@@ -91,3 +91,11 @@ def test_list_returns_open_loops_only_by_default():
     gh.create_issue(REPO, "not a loop", "", ["bug"])
     assert [x.title for x in lp.list()] == ["open one"]
     assert {x.title for x in lp.list("all")} == {"open one", "done one"}
+
+
+def test_a_repeat_add_right_after_creation_is_deduped_despite_a_lagging_list():
+    gh, lp, _ = make()
+    gh.list_issues = lambda repo, label, state="all": []    # GitHub had not indexed the new issue yet
+    first, _ = lp.add("Rotate the key", key="o/r#1:rotate")
+    again, created = lp.add("Rotate the key", key="o/r#1:rotate")
+    assert not created and again.number == first.number and len(gh.issues) == 1

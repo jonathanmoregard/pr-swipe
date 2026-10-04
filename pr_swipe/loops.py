@@ -91,6 +91,7 @@ class Loops:
         if not REPO_RE.fullmatch(repo):
             raise LoopError(f"bad loops repo {repo!r}")
         self.gh, self.repo, self.clock, self._writes = gh, repo, clock, []
+        self._created = {}  # key -> Loop: GitHub's issue list lags a fresh issue by seconds
 
     # --- gates ---
     def _tick(self):
@@ -125,12 +126,16 @@ class Loops:
             key = loop_key(key)
         key = key or loop_key(source, title)
         due = _date(due, "due")
+        if key in self._created:
+            return self._created[key], False
         for existing in self.list("all"):
             if existing.key == key:
                 return existing, False
         self._tick()
         labels = [LABEL, f"kind:{kind}", f"owner:{owner}"] + [f"src:{source}"] * bool(source)
-        return from_issue(self.gh.create_issue(self.repo, title, _body(body or "", due, "", key), labels)), True
+        loop = from_issue(self.gh.create_issue(self.repo, title, _body(body or "", due, "", key), labels))
+        self._created[key] = loop
+        return loop, True
 
     def _edit(self, n, labels=None, **body_fields):
         i = self._issue(n)

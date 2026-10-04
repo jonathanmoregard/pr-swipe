@@ -487,7 +487,7 @@ class Window(QMainWindow):
         self.loops_meta.setText(LD.meta_line(x, today))
         self.loops_body.setPlainText(x["body"] or "(no details)")
         self.loops_body.show()
-        self._footer()
+        self._footer(f"{len(items)} open loop{'' if len(items) == 1 else 's'} · L returns to the PR deck")
 
     def _loop_key(self, ev):
         k = ev.key()
