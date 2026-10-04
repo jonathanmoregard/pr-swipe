@@ -6,14 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "pr-swipe"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["PySide6", "jsonschema", "PyJWT", "cryptography", "Pygments"]
+dependencies = ["PySide6", "jsonschema", "PyJWT", "cryptography", "Pygments", "mcp"]
 
 [project.scripts]
 pr-swipe-collector = "pr_swipe.collector:main"
 pr-swipe-executor = "pr_swipe.executor:main"
 pr-swipe-gui = "pr_swipe.gui.app:main"
 pr-swipe-apply-rulesets = "pr_swipe.rulesets:main"
-pr-swipe-followups = "pr_swipe.followups:main"
+pr-swipe-loops = "pr_swipe.loops_service:main"
+pr-swipe-loops-mcp = "pr_swipe.loops_mcp:main"
 
 [tool.setuptools.packages.find]
 include = ["pr_swipe*"]
